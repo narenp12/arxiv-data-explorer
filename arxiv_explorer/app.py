@@ -19,78 +19,92 @@ st.set_page_config(page_title="arXiv Explorer", page_icon=None, layout="wide")
 # ---------------------------------------------------------------------------
 # Cached data loading
 # ---------------------------------------------------------------------------
-@st.cache_data(show_spinner="Loading 1M papers…")
+@st.cache_resource
 def load_data():
-    return pl.read_parquet(DATA)
+    return pl.scan_parquet(DATA)
 
 
 @st.cache_data(show_spinner="Preparing date columns…")
-def load_date_df():
-    df = load_data()
-    return df.with_columns(
+def load_date_df(_lf):
+    return _lf.with_columns(
         pl.col("update_date").str.to_date("%Y-%m-%d").alias("date"),
         pl.col("update_date").str.to_date("%Y-%m-%d").dt.year().alias("year"),
         pl.col("update_date").str.to_date("%Y-%m-%d").dt.month().alias("month"),
-    )
+    ).collect()
 
 
 @st.cache_data(show_spinner="Counting papers per category…")
-def get_top_categories(_df, n=30):
-    flat = _df.select(pl.col("categories").str.split(" ")).explode("categories")
-    result = (
-        flat.group_by("categories")
+def get_top_categories(_lf, n=30):
+    return (
+        _lf.select(pl.col("categories").str.split(" "))
+        .explode("categories")
+        .group_by("categories")
         .agg(pl.len().alias("count"))
         .sort("count", descending=True)
         .head(n)
-    )
-    return result.with_columns(
-        pl.col("categories").replace(labels.CATEGORY_LABELS).alias("label")
+        .with_columns(pl.col("categories").replace(labels.CATEGORY_LABELS).alias("label"))
+        .collect()
     )
 
 
 @st.cache_data
 def get_year_counts(_df):
-    return _df.group_by("year").agg(pl.len().alias("count")).sort("year")
+    return _df.group_by("year").agg(pl.len().alias("count")).sort("year").collect()
 
 
 @st.cache_data
 def get_month_counts(_df):
-    return _df.group_by("month").agg(pl.len().alias("count")).sort("month")
+    return _df.group_by("month").agg(pl.len().alias("count")).sort("month").collect()
 
 
 @st.cache_data
-def get_null_counts(_df):
+def get_null_counts(_lf):
     return (
-        _df.null_count()
+        _lf.null_count()
         .melt(value_name="null_count")
-        .with_columns((1 - pl.col("null_count") / len(_df)).alias("filled_pct"))
+        .with_columns((1 - pl.col("null_count") / _lf.select(pl.len()).collect().item()).alias("filled_pct"))
         .sort("filled_pct")
+        .collect()
+    )
+
+
+@st.cache_data
+def _top50_authors(_lf):
+    return (
+        _lf.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
+        .explode("authors_parsed")
+        .group_by("authors_parsed")
+        .agg(pl.len().alias("count"))
+        .sort("count", descending=True)
+        .head(50)
+        .collect()
     )
 
 
 @st.cache_data(show_spinner="Counting licenses…")
-def get_license_counts(_df):
-    lic = (
-        _df.group_by("license")
+def get_license_counts(_lf):
+    return (
+        _lf.group_by("license")
         .agg(pl.len().alias("count"))
         .sort("count", descending=True)
-    )
-    return lic.with_columns(
-        pl.when(pl.col("license").is_null()).then(pl.lit("Missing"))
-        .when(pl.col("license").str.contains("nonexclusive", literal=True)).then(pl.lit("arXiv nonexclusive"))
-        .when(pl.col("license").str.contains("by/4.0", literal=True)).then(pl.lit("CC BY 4.0"))
-        .when(pl.col("license").str.contains("by-nc-nd/4.0", literal=True)).then(pl.lit("CC BY-NC-ND 4.0"))
-        .when(pl.col("license").str.contains("by-nc-sa/4.0", literal=True)).then(pl.lit("CC BY-NC-SA 4.0"))
-        .when(pl.col("license").str.contains("by-sa/4.0", literal=True)).then(pl.lit("CC BY-SA 4.0"))
-        .when(pl.col("license").str.contains("publicdomain/zero", literal=True)).then(pl.lit("CC0 1.0"))
-        .otherwise(pl.lit("Other"))
-        .alias("license_short")
+        .with_columns(
+            pl.when(pl.col("license").is_null()).then(pl.lit("Missing"))
+            .when(pl.col("license").str.contains("nonexclusive", literal=True)).then(pl.lit("arXiv nonexclusive"))
+            .when(pl.col("license").str.contains("by/4.0", literal=True)).then(pl.lit("CC BY 4.0"))
+            .when(pl.col("license").str.contains("by-nc-nd/4.0", literal=True)).then(pl.lit("CC BY-NC-ND 4.0"))
+            .when(pl.col("license").str.contains("by-nc-sa/4.0", literal=True)).then(pl.lit("CC BY-NC-SA 4.0"))
+            .when(pl.col("license").str.contains("by-sa/4.0", literal=True)).then(pl.lit("CC BY-SA 4.0"))
+            .when(pl.col("license").str.contains("publicdomain/zero", literal=True)).then(pl.lit("CC0 1.0"))
+            .otherwise(pl.lit("Other"))
+            .alias("license_short")
+        )
+        .collect()
     )
 
 
 @st.cache_data
-def search_papers(_df, query, category, year_range, author):
-    result = _df.lazy()
+def search_papers(_lf, query, category, year_range, author):
+    result = _lf
     if query:
         parts = query.strip().split()
         cond = None
@@ -115,14 +129,18 @@ def search_papers(_df, query, category, year_range, author):
 # ---------------------------------------------------------------------------
 def page_dashboard():
     st.title("Dashboard")
-    df = load_data()
-    date_df = load_date_df()
+    lf = load_data()
+    date_df = load_date_df(lf)
+
+    total = lf.select(pl.len()).collect().item()
+    n_cats = lf.select(pl.col("categories").str.split(" ").explode("categories").unique().len()).collect().item()
+    n_authors = lf.select(pl.col("authors_parsed").list.eval(pl.element().list.first())).explode("authors_parsed").unique().len().collect().item()
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Papers", f"{len(df):,}")
+    col1.metric("Total Papers", f"{total:,}")
     col2.metric("Date Range", f"{date_df['date'].min().strftime('%Y-%m-%d')}  →  {date_df['date'].max().strftime('%Y-%m-%d')}")
-    col3.metric("Categories", f"{df['categories'].n_unique():,}")
-    col4.metric("Authors (unique last names)", f"{df.select(pl.col('authors_parsed').list.eval(pl.element().list.first())).explode('authors_parsed')['authors_parsed'].n_unique():,}")
+    col3.metric("Categories", f"{n_cats:,}")
+    col4.metric("Authors (unique last names)", f"{n_authors:,}")
 
     c1, c2 = st.columns(2)
 
@@ -150,7 +168,7 @@ def page_dashboard():
     c1, c2 = st.columns(2)
 
     with c1:
-        top_cats = get_top_categories(df)
+        top_cats = get_top_categories(lf)
         fig = px.bar(top_cats.head(20), x="count", y="label", orientation="h",
                      title="Top 20 Research Areas", labels={"count": "Papers", "label": ""},
                      height=500, text_auto=True)
@@ -159,14 +177,14 @@ def page_dashboard():
         st.plotly_chart(fig, width='stretch')
 
     with c2:
-        lic_counts = get_license_counts(df)
+        lic_counts = get_license_counts(lf)
         fig = px.pie(lic_counts, values="count", names="license_short",
                      title="License Distribution", hole=0.4, height=500)
         fig.update_traces(textinfo="label+percent")
         st.plotly_chart(fig, width='stretch')
 
     st.subheader("Data Completeness")
-    null_df = get_null_counts(df)
+    null_df = get_null_counts(lf)
     fig = px.bar(null_df, x="column", y="filled_pct", title="",
                  labels={"column": "", "filled_pct": "Non-null proportion"},
                  text_auto=".0%", height=400, color="filled_pct",
@@ -178,20 +196,17 @@ def page_dashboard():
 
 def page_search():
     st.title("Search Papers")
-    df = load_data()
+    lf = load_data()
 
     with st.sidebar:
         st.header("Filters")
         query = st.text_input("Search title / abstract", placeholder="e.g. quantum gravity")
-        all_cats = ["All"] + sorted(
-            df.select(pl.col("categories").str.split(" "))
-            .explode("categories")["categories"]
-            .unique()
-            .to_list()
-        )
+        cats_series = lf.select(pl.col("categories").str.split(" ")).explode("categories").unique().collect().to_series()
+        all_cats = ["All"] + sorted(cats_series.to_list())
         category = st.selectbox("Category", all_cats)
-        year_min = int(df["update_date"].str.slice(0, 4).min())
-        year_max = int(df["update_date"].str.slice(0, 4).max())
+        year_range_series = lf.select(pl.col("update_date").str.slice(0, 4).cast(pl.Int32)).collect()
+        year_min = int(year_range_series.min().item())
+        year_max = int(year_range_series.max().item())
         year_range = st.slider("Year range", year_min, year_max, (year_min, year_max))
         author = st.text_input("Author", placeholder="e.g. de Leeuw")
         search_btn = st.button("Search", type="primary", use_container_width=True)
@@ -206,7 +221,7 @@ def page_search():
             with st.spinner("Searching 1M papers…"):
                 t0 = time.time()
                 st.session_state.search_results = search_papers(
-                    df, query, category, year_range, author
+                    lf, query, category, year_range, author
                 )
                 st.session_state.search_time = time.time() - t0
 
@@ -245,9 +260,9 @@ def page_search():
 
 def page_categories():
     st.title("Category Explorer")
-    df = load_data()
+    lf = load_data()
 
-    cat_counts = df.select(pl.col("categories").str.split(" ").list.len().alias("n_cats"))
+    cat_counts = lf.select(pl.col("categories").str.split(" ").list.len().alias("n_cats")).collect()
     fig = px.histogram(x=cat_counts["n_cats"].clip(upper_bound=10),
                        nbins=10, title="Categories per Paper",
                        labels={"x": "Categories", "count": "Papers"}, height=400)
@@ -256,7 +271,7 @@ def page_categories():
     st.plotly_chart(fig, width='stretch')
 
     top_n = st.slider("Number of top categories", 10, 50, 30)
-    top_cats = get_top_categories(df, top_n)
+    top_cats = get_top_categories(lf, top_n)
 
     fig = px.bar(top_cats, x="count", y="label", orientation="h",
                  title=f"Top {top_n} Research Areas", labels={"count": "Papers", "label": ""},
@@ -269,7 +284,7 @@ def page_categories():
     top10 = [c for c in top_cats["categories"][:10]]
     top10_labels = [labels.readable_category(c) for c in top10]
     with st.spinner("Computing category co-occurrence matrix…"):
-        cat_matrix = df.select(*[pl.col("categories").str.contains(c, literal=True).cast(pl.Int32).alias(c) for c in top10])
+        cat_matrix = lf.select(*[pl.col("categories").str.contains(c, literal=True).cast(pl.Int32).alias(c) for c in top10]).collect()
         cooc = cat_matrix.to_numpy().T @ cat_matrix.to_numpy()
         totals = np.diag(cooc).copy()
         cooc_norm = cooc / totals[:, np.newaxis].astype(float)
@@ -289,7 +304,7 @@ def page_categories():
     selected_label = st.selectbox("Select a research area", top_cats["label"].to_list())
     selected_cat = label_to_code[selected_label]
     if selected_cat:
-        papers = df.filter(pl.col("categories").str.contains(selected_cat, literal=True))
+        papers = lf.filter(pl.col("categories").str.contains(selected_cat, literal=True)).collect()
         st.info(f"{len(papers):,} papers in **{selected_label}**")
         sample = papers.sample(n=min(20, len(papers)), seed=42)
         for row in sample.iter_rows(named=True):
@@ -298,12 +313,28 @@ def page_categories():
 
 def page_authors():
     st.title("Authors")
-    df = load_data()
+    lf = load_data()
+
+    author_counts = _top50_authors(lf)
+    top_author_list = author_counts["authors_parsed"].to_list()
 
     search_name = st.text_input("Search by author name", placeholder="e.g. Wang")
-    if search_name:
-        papers = df.filter(pl.col("authors").str.contains(search_name, literal=True))
-        st.info(f"{len(papers):,} papers match **{search_name}**")
+
+    if search_name and search_name.strip():
+        q = search_name.strip().lower()
+        suggestions = [a for a in top_author_list if q in a.lower()][:5]
+        if suggestions:
+            st.caption("Suggestions:")
+            for s in suggestions:
+                if st.button(s, key=f"asug_{s}"):
+                    st.session_state.author_search_override = s
+                    st.rerun()
+
+    effective = st.session_state.pop("author_search_override", None) or search_name
+
+    if effective:
+        papers = lf.filter(pl.col("authors").str.contains(effective, literal=True)).collect()
+        st.info(f"{len(papers):,} papers match **{effective}**")
         if len(papers) > 0:
             MAX_SHOW = 200
             display = papers.head(MAX_SHOW)
@@ -317,15 +348,6 @@ def page_authors():
                         st.markdown(f"**Abstract:** {row['abstract'][:400]}…")
     else:
         st.subheader("Most Prolific Authors (by last name)")
-        with st.spinner("Counting papers per author…"):
-            last_names = df.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
-            author_counts = (
-                last_names.explode("authors_parsed")
-                .group_by("authors_parsed")
-                .agg(pl.len().alias("count"))
-                .sort("count", descending=True)
-                .head(50)
-            )
         fig = px.bar(author_counts.head(30), x="count", y="authors_parsed",
                      orientation="h", title="Top 30 Author Last Names",
                      labels={"count": "Papers", "authors_parsed": ""},
@@ -336,7 +358,7 @@ def page_authors():
 
     with st.spinner("Computing author distribution…"):
         st.subheader("Authors per Paper Distribution")
-        n_authors = df.select(pl.col("authors_parsed").list.len().alias("n_authors"))
+        n_authors = lf.select(pl.col("authors_parsed").list.len().alias("n_authors")).collect()
         binned = (
             n_authors
             .with_columns(pl.when(pl.col("n_authors") > 50).then(51).otherwise(pl.col("n_authors")).alias("n_auth_binned"))
@@ -355,8 +377,8 @@ def page_authors():
 
 def page_trends():
     st.title("Trends & Statistics")
-    df = load_data()
-    date_df = load_date_df()
+    lf = load_data()
+    date_df = load_date_df(lf)
 
     tab1, tab2, tab3, tab4 = st.tabs(["Temporal", "Versions", "Text", "Comments"])
 
@@ -393,7 +415,7 @@ def page_trends():
 
     with tab2:
         with st.spinner("Computing version statistics…"):
-            version_stats = df.select(pl.col("versions").list.len().alias("n_versions"))
+            version_stats = lf.select(pl.col("versions").list.len().alias("n_versions")).collect()
             st.dataframe(version_stats.describe(), use_container_width=True)
 
             version_binned = (
@@ -413,8 +435,8 @@ def page_trends():
 
     with tab3:
         with st.spinner("Analyzing text length…"):
-            text_df = df.select(pl.col("title").str.len_chars().alias("title_len"),
-                                pl.col("abstract").str.len_chars().alias("abstract_len"))
+            text_df = lf.select(pl.col("title").str.len_chars().alias("title_len"),
+                                pl.col("abstract").str.len_chars().alias("abstract_len")).collect()
             fig = make_subplots(rows=1, cols=2, subplot_titles=("Title Length", "Abstract Length"), shared_yaxes=True)
             fig.add_trace(go.Histogram(x=text_df["title_len"], nbinsx=60, marker_color="#636efa", name="Title"), row=1, col=1)
             fig.add_trace(go.Histogram(x=text_df["abstract_len"].clip(upper_bound=3000), nbinsx=80,
@@ -431,12 +453,12 @@ def page_trends():
 
     with tab4:
         with st.spinner("Parsing comments field…"):
-            comments_df = df.select(
+            comments_df = lf.select(
                 pl.col("comments").str.len_chars().alias("comments_len"),
                 pl.col("comments").str.contains(r"\d+\s*pages?", literal=False).alias("has_pages"),
                 pl.col("comments").str.contains(r"\d+\s*figures?", literal=False).alias("has_figures"),
                 pl.col("comments").str.contains(r"\d+\s*\w*\s*references?", literal=False).alias("has_refs"),
-            )
+            ).collect()
             c1, c2, c3 = st.columns(3)
             c1.metric("With page count", f"{comments_df['has_pages'].sum():,}")
             c2.metric("With figure count", f"{comments_df['has_figures'].sum():,}")
