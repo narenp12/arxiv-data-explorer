@@ -410,12 +410,16 @@ def plotly_network_graph(
 
     fig = go.Figure(data=edge_traces + [node_trace])
     fig.update_layout(
-        title=None,
+        title="",
         showlegend=False,
         hovermode="closest",
-        margin=dict(b=5, l=5, r=5, t=5),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        margin=dict(b=10, l=10, r=10, t=10),
+        xaxis=dict(
+            showgrid=False, zeroline=False, showticklabels=False, title=""
+        ),
+        yaxis=dict(
+            showgrid=False, zeroline=False, showticklabels=False, title=""
+        ),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         width=None,
@@ -481,16 +485,15 @@ def tab_category_network():
         return
 
     all_nodes = sorted(G.nodes(), key=lambda n: -G.degree(n))
-    node_labels = [f"{labels.readable_category(n)} ({n})" for n in all_nodes]
     if "_cat_ego_forward" in st.session_state:
         st.session_state.cat_ego = st.session_state._cat_ego_forward
         del st.session_state._cat_ego_forward
-    cat_sel = st.selectbox(
-        "Choose a research area to explore", node_labels, key="cat_ego"
+    selected_node = st.selectbox(
+        "Choose a research area to explore",
+        all_nodes,
+        format_func=lambda n: labels.readable_category(n),
+        key="cat_ego",
     )
-
-    parts = cat_sel.rsplit(" (", 1)
-    selected_node = parts[-1].rstrip(")") if len(parts) > 1 else parts[0]
 
     ego = nx.Graph()
     ego.add_node(
