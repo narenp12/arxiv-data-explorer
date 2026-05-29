@@ -1,15 +1,15 @@
 dataset:
-  name: arxiv_random_sample
+  name: arxiv
   description: >
-    A random sample of 1,000,000 papers from the arXiv e-print repository.
-    Includes metadata such as title, authors, abstract, categories, and
-    version history.
-  source: arxiv_random_sample.parquet
+    arXiv paper metadata. Supports two sources:
+    - Local sample: arxiv_random_sample.parquet (1,000,000 papers)
+    - Remote: open-index/open-arxiv on HuggingFace (2,990,000 papers, updated weekly)
+  source: arxiv_random_sample.parquet (local) / open-index/open-arxiv (remote)
   format: Parquet
-  total_rows: 1_000_000
+  local_rows: 1_000_000
+  remote_rows: 2_990_000
   total_columns: 14
-  total_derived_columns: 25
-  memory_usage_mb: 1617.58
+  total_derived_columns: 26
 
 columns:
 
@@ -307,6 +307,6 @@ derived_columns:
     used_in: Dashboard (data completeness chart)
 
   - name: _row_idx
-    type: uint32
+    type: UInt32
     description: Internal row index for joining operations (not displayed)
     used_in: Network — Category Network (internal)

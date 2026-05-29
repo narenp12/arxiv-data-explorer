@@ -5,13 +5,14 @@ import plotly.graph_objects as go
 import plotly.express as px
 from itertools import combinations
 import re
-import sys
-import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "..", "arxiv_random_sample.parquet")
-sys.path.insert(0, HERE)
 import labels
+import data_loader
+
+
+def _author_full_name_expr():
+    return (pl.element().list.get(1).str.strip_chars() + " " + pl.element().list.get(0)).str.strip_chars()
+
 
 _CATEGORY_ALIASES = {
     "math-ph": "math.MP",
@@ -74,6 +75,13 @@ def _subject_color(node, data):
         h = (h * 31 + ord(c)) & 0xFFFFFFFF
     return _EXTRA_PALETTE[h % len(_EXTRA_PALETTE)]
 
+
+def _category_pattern(category):
+    """Build a regex pattern matching a category and its aliases at word boundaries."""
+    aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
+    all_cats = [category] + aliases
+    return r'(?:^|\s)(?:' + '|'.join(re.escape(c) for c in all_cats) + r')(?:\s|$)'
+
 st.set_page_config(page_title="arXiv Network Explorer", page_icon=None, layout="wide")
 st.title("arXiv Network Explorer")
 st.markdown("Explore how research areas and authors are connected in 1M arXiv papers.")
@@ -82,10 +90,6 @@ st.markdown("Explore how research areas and authors are connected in 1M arXiv pa
 # ---------------------------------------------------------------------------
 # Cached data
 # ---------------------------------------------------------------------------
-@st.cache_resource
-def load_data():
-    return pl.scan_parquet(DATA)
-
 
 @st.cache_data(show_spinner="Pre-computing category relationships…")
 def precompute_category_data(_lf):
@@ -141,36 +145,39 @@ def build_category_graph(pc_df, cooc_df, top_n, min_cooc):
 
 @st.cache_data
 def precompute_author_data(_lf, author_name):
-    papers = _lf.filter(pl.col("authors").str.contains(author_name, literal=True)).collect()
+    papers = _lf.filter(pl.col("authors").str.contains(author_name, literal=True)).select(
+        pl.col("authors_parsed")
+    ).collect()
+
     if len(papers) == 0:
         return None, [], [], 0
 
-    matched_names = set()
-    coauthor_papers = {}
-    center_paper_count = 0
-    rows_cache = []
+    names_df = papers.with_columns(
+        pl.col("authors_parsed").list.eval(_author_full_name_expr()).alias("full_names")
+    )
 
-    for row in papers.select("authors_parsed").iter_rows():
-        authors = row[0]
-        if not authors:
-            continue
-        full_names = []
-        for a in authors:
-            last = a[0].strip() if a[0] else ""
-            first = a[1].strip() if len(a) > 1 and a[1] else ""
-            suffix = a[2].strip() if len(a) > 2 and a[2] else ""
-            name = f"{first} {last}".strip() + (f" {suffix}" if suffix else "")
-            full_names.append(name)
+    exploded = names_df.with_row_index().explode("full_names")
 
-        matched = [n for n in full_names if author_name.lower() in n.lower()]
-        if not matched:
-            continue
-        matched_names.update(matched)
-        center_paper_count += 1
-        for n in full_names:
-            if n not in matched:
-                coauthor_papers[n] = coauthor_papers.get(n, 0) + 1
-        rows_cache.append([n for n in full_names if n not in matched])
+    q = author_name.lower()
+    with_match = exploded.with_columns(
+        pl.col("full_names").str.to_lowercase().str.contains(q).alias("is_match")
+    )
+
+    center_paper_count = with_match.filter(pl.col("is_match")).select(pl.col("index").n_unique()).item()
+
+    matched_names = set(with_match.filter(pl.col("is_match"))["full_names"].unique().to_list())
+
+    paper_with_match = with_match.filter(pl.col("is_match")).select("index").unique()
+    coauthors = with_match.join(paper_with_match, on="index").filter(~pl.col("is_match"))
+    coauthor_counts = coauthors.group_by("full_names").agg(pl.len().alias("count")).sort("count", descending=True)
+    coauthor_papers = dict(coauthor_counts.iter_rows())
+
+    rows_cache = (
+        with_match.filter(~pl.col("is_match"))
+        .group_by("index", maintain_order=True)
+        .agg(pl.col("full_names"))
+        .select("full_names")
+    )["full_names"].to_list()
 
     return matched_names, coauthor_papers, rows_cache, center_paper_count
 
@@ -314,7 +321,7 @@ def tab_category_network():
     st.header("Research Area Connections")
     st.markdown("Each circle is a research area. Lines connect areas that frequently appear together on papers. Bigger circles = more papers.")
 
-    lf = load_data()
+    lf = data_loader.load_data()
 
     paper_counts, cooc_counts = precompute_category_data(lf)
 
@@ -345,20 +352,27 @@ def tab_category_network():
     with col1:
         st.plotly_chart(st.session_state.cat_fig, width='stretch')
 
-    with col2:
-        st.metric("Research areas", G.number_of_nodes(),
+        with col2:
+            st.metric("Research areas", G.number_of_nodes(),
                    help="Number of distinct research area categories in the visible network")
-        st.metric("Connections", G.number_of_edges(),
+            st.metric("Connections", G.number_of_edges(),
                    help="Number of co-occurrence connections between research areas")
-        st.metric("Connectivity", f"{nx.density(G):.4f}",
+            st.metric("Connectivity", f"{nx.density(G):.4f}",
                    help="Network density: fraction of possible connections that exist (0=disconnected, 1=fully connected)")
 
-        st.subheader("Most Connected Areas")
-        degrees = sorted(G.degree, key=lambda x: -x[1])[:10]
-        for node, deg in degrees:
-            count = G.nodes[node].get("count", 0)
-            label = labels.readable_category(node)
-            st.markdown(f"- **{label}**: {deg} connections, {count:,} papers")
+            with st.container(border=True):
+                st.subheader("Most Connected Areas")
+                degrees = sorted(G.degree, key=lambda x: -x[1])[:10]
+                for node, deg in degrees:
+                    count = G.nodes[node].get("count", 0)
+                    label = labels.readable_category(node)
+                    cols = st.columns([2, 1, 1])
+                    with cols[0]:
+                        st.markdown(f"**{label}**")
+                    with cols[1]:
+                        st.markdown(f"{deg} conn.")
+                    with cols[2]:
+                        st.markdown(f"{count:,} papers")
 
 
 # ---------------------------------------------------------------------------
@@ -367,9 +381,9 @@ def tab_category_network():
 @st.cache_data
 def _top_authors(_lf):
     return (
-        _lf.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
-        .explode("authors_parsed")
-        .group_by("authors_parsed")
+        _lf.select(pl.col("authors_parsed").list.eval(_author_full_name_expr()).alias("full_name"))
+        .explode("full_name")
+        .group_by("full_name")
         .agg(pl.len().alias("count"))
         .sort("count", descending=True)
         .head(20)
@@ -379,16 +393,16 @@ def _top_authors(_lf):
 
 def tab_coauthor_network():
     st.header("Collaboration Network")
-    st.markdown("Search for an author and see who they have worked with. The bigger the circle, the more papers they have together.")
+    st.markdown("Search for an author to see their co-author network. Bigger circles = more co-authored papers.")
 
-    lf = load_data()
+    lf = data_loader.load_data()
 
     top_authors_df = _top_authors(lf)
-    top_author_list = top_authors_df["authors_parsed"].to_list()
+    top_author_list = top_authors_df["full_name"].to_list()
 
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
-        author_name = st.text_input("Author name (last name only is fine)", placeholder="e.g. Wang",
+        author_name = st.text_input("Author name", placeholder="e.g. Yi Wang",
                                     value=st.session_state.get("author_name", ""))
     with c2:
         max_co = st.slider("Maximum co-authors to show", 5, 150, 40, key="co_max")
@@ -400,13 +414,15 @@ def tab_coauthor_network():
         suggestions = [a for a in top_author_list if q in a.lower()][:5]
         if suggestions:
             st.caption("Suggestions:")
-            for s in suggestions:
-                if st.button(s, key=f"co_sug_{s}"):
-                    st.session_state.author_name = s
-                    st.session_state.co_auto_search = s
-                    st.rerun()
+            sug_cols = st.columns(min(len(suggestions), 3))
+            for i, s in enumerate(suggestions):
+                with sug_cols[i % 3]:
+                    if st.button(s, key=f"co_sug_{s}"):
+                        st.session_state.author_name = s
+                        st.session_state.co_auto_search = s
+                        st.rerun()
     else:
-        st.markdown("**Popular last names:** " + " • ".join(top_author_list[:10]))
+        st.markdown("**Popular authors:** " + " • ".join(top_author_list[:10]))
 
     def _build_coa_graph(an, mco):
         md, cp, co, cpc = st.session_state.co_raw
@@ -462,77 +478,120 @@ def tab_coauthor_network():
                        help="Number of co-author connections that exist between the author's collaborators (excluding direct links to the author)")
 
             if "matched_names" in st.session_state:
-                st.subheader("People matching your search")
-                for name in st.session_state.matched_names[:10]:
-                    st.markdown(f"- {name}")
-                if len(st.session_state.matched_names) > 10:
-                    st.caption(f"... and {len(st.session_state.matched_names) - 10} more")
+                with st.container(border=True):
+                    st.subheader("Name Matches")
+                    for name in st.session_state.matched_names[:8]:
+                        st.markdown(f"- {name}")
+                    if len(st.session_state.matched_names) > 8:
+                        st.caption(f"... and {len(st.session_state.matched_names) - 8} more")
 
-            st.subheader("Closest Collaborators")
-            edges = sorted(G.edges(data=True), key=lambda e: -e[2].get("weight", 0))
-            for u, v, data in edges[:15]:
-                other = v if u == an else u
-                w = data.get("weight", 1)
-                papers = G.nodes[other].get("papers", 0)
-                if w == 1:
-                    st.markdown(f"- **{other}**: {w} paper with {an}")
-                else:
-                    st.markdown(f"- **{other}**: {w} papers with {an}")
+            with st.container(border=True):
+                st.subheader("Closest Collaborators")
+                edges = sorted(G.edges(data=True), key=lambda e: -e[2].get("weight", 0))
+                for u, v, data in edges[:12]:
+                    other = v if u == an else u
+                    w = data.get("weight", 1)
+                    papers = G.nodes[other].get("papers", 0)
+                    cols = st.columns([2, 1, 1])
+                    with cols[0]:
+                        st.markdown(f"**{other}**")
+                    with cols[1]:
+                        st.markdown(f"{w} paper{'s' if w != 1 else ''}")
+                    with cols[2]:
+                        st.markdown(f"{papers:,} total")
 
 
 # ---------------------------------------------------------------------------
 # Tab 3: Network Stats
 # ---------------------------------------------------------------------------
+@st.cache_data
+def _author_stats(_lf):
+    n_authors = _lf.select(pl.col("authors_parsed").list.len().alias("n_authors")).collect()
+    return (
+        int((n_authors["n_authors"] == 1).sum()),
+        int((n_authors["n_authors"] >= 2).sum()),
+        int((n_authors["n_authors"] >= 100).sum()),
+        int((n_authors["n_authors"] >= 1000).sum()),
+    )
+
+
+@st.cache_data
+def _prolific_authors(_lf):
+    return (
+        _lf.select(pl.col("authors_parsed").list.eval(_author_full_name_expr()).alias("full_name"))
+        .explode("full_name")
+        .group_by("full_name")
+        .agg(pl.len().alias("papers"))
+        .sort("papers", descending=True)
+        .head(20)
+        .with_columns((pl.col("papers") / pl.col("papers").max() * 100).cast(pl.Int32).alias("relative"))
+        .collect()
+    )
+
+
+@st.cache_data
+def _overlap_stats(_lf):
+    row = _lf.select(
+        pl.len().alias("total"),
+        pl.col("categories").str.split(" ").list.len().gt(1).sum().alias("multi_cat"),
+    ).collect()
+    return int(row["total"][0]), int(row["multi_cat"][0])
+
+
 def tab_network_stats():
     st.header("Network Statistics")
-    lf = load_data()
+    lf = data_loader.load_data()
 
     with st.spinner("Computing network statistics…"):
-        st.subheader("How Many Authors per Paper?")
-        n_authors = lf.select(pl.col("authors_parsed").list.len().alias("n_authors")).collect()
-        solo = (n_authors["n_authors"] == 1).sum()
-        multi = (n_authors["n_authors"] >= 2).sum()
-        large = (n_authors["n_authors"] >= 100).sum()
-        huge = (n_authors["n_authors"] >= 1000).sum()
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Single author", f"{solo:,}",
-                   help="Papers with exactly one author")
-        c2.metric("Multiple authors", f"{multi:,}",
-                   help="Papers with two or more authors")
-        c3.metric("100+ co-authors", f"{large:,}",
-                   help="Papers listing 100 or more authors")
-        c4.metric("1000+ co-authors", f"{huge:,}",
-                   help="Papers listing 1000 or more authors")
+        with st.container(border=True):
+            st.subheader("Authors per Paper",
+                          help=labels.COLUMN_HELP["n_authors"])
+            solo, multi, large, huge = _author_stats(lf)
 
-        st.subheader("Authors with the Most Papers")
-        author_counts = (
-            lf.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
-            .explode("authors_parsed")
-            .group_by("authors_parsed")
-            .agg(pl.len().alias("papers"))
-            .sort("papers", descending=True)
-            .head(20)
-            .with_columns((pl.col("papers") / pl.col("papers").max() * 100).cast(pl.Int32).alias("relative"))
-            .collect()
-        )
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Single author", f"{solo:,}",
+                       help="Papers with exactly one author")
+            c2.metric("Multiple authors", f"{multi:,}",
+                       help="Papers with two or more authors")
+            c3.metric("100+ co-authors", f"{large:,}",
+                       help="Papers listing 100 or more authors")
+            c4.metric("1000+ co-authors", f"{huge:,}",
+                       help="Papers listing 1000 or more authors")
 
-        st.dataframe(author_counts, width='stretch', hide_index=True,
-                     column_config={
-                         "authors_parsed": st.column_config.TextColumn("Last Name",
-                             help="Author's surname (last name) extracted from the parsed author list"),
-                         "papers": st.column_config.NumberColumn("Papers", format="%d",
-                             help=labels.COLUMN_HELP["papers"]),
-                         "relative": st.column_config.NumberColumn("vs #1", format="%d%%",
-                             help="Percentage of papers relative to the most prolific author"),
-                     })
+        with st.container(border=True):
+            st.subheader("Most Prolific Authors",
+                          help="Authors with the highest paper counts in the dataset")
+            author_counts = _prolific_authors(lf)
 
-        st.subheader("Research Area Overlap")
-        total = lf.select(pl.len()).collect().item()
-        multi_cat_papers = lf.filter(pl.col("categories").str.split(" ").list.len() > 1).select(pl.len()).collect().item()
-        st.metric("Papers spanning multiple research areas",
-                   f"{multi_cat_papers:,} ({multi_cat_papers / total * 100:.1f}% of all papers)",
-                   help="Papers tagged with more than one arXiv category, indicating interdisciplinary research")
+            col_chart, col_table = st.columns([3, 2])
+            with col_chart:
+                fig = px.bar(author_counts.head(10), x="papers", y="full_name",
+                             orientation="h", title="Top 10",
+                             labels={"papers": "Papers", "full_name": ""},
+                             height=400, text_auto=True)
+                fig.update_traces(marker_color="#636efa")
+                fig.update_layout(yaxis={"categoryorder": "total ascending"})
+                st.plotly_chart(fig, width='stretch')
+
+            with col_table:
+                st.dataframe(author_counts, width='stretch', hide_index=True,
+                             column_config={
+                                 "full_name": st.column_config.TextColumn("Author",
+                                     help="Author's full name (first + last) constructed from authors_parsed"),
+                                 "papers": st.column_config.NumberColumn("Papers", format="%d",
+                                     help=labels.COLUMN_HELP["papers"]),
+                                 "relative": st.column_config.NumberColumn("vs #1", format="%d%%",
+                                     help="Percentage of papers relative to the most prolific author"),
+                             })
+
+        with st.container(border=True):
+            st.subheader("Research Area Overlap",
+                          help="Papers tagged with more than one arXiv category")
+            total, multi_cat_papers = _overlap_stats(lf)
+            st.metric("Papers spanning multiple research areas",
+                       f"{multi_cat_papers:,} ({multi_cat_papers / total * 100:.1f}% of all papers)",
+                       help="Papers tagged with more than one arXiv category, indicating interdisciplinary research")
 
 
 # ---------------------------------------------------------------------------
@@ -550,9 +609,7 @@ def _domain_counts(_pc):
 
 @st.cache_data(show_spinner="Finding authors…")
 def _category_authors(_lf, category):
-    aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
-    all_cats = [category] + aliases
-    pattern = r'(?:^|\s)(?:' + '|'.join(re.escape(c) for c in all_cats) + r')(?:\s|$)'
+    pattern = _category_pattern(category)
     return (
         _lf.filter(pl.col("categories").str.contains(pattern))
         .select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
@@ -567,9 +624,7 @@ def _category_authors(_lf, category):
 
 @st.cache_data(show_spinner="Loading papers…")
 def _author_papers(_lf, category, author):
-    aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
-    all_cats = [category] + aliases
-    pattern = r'(?:^|\s)(?:' + '|'.join(re.escape(c) for c in all_cats) + r')(?:\s|$)'
+    pattern = _category_pattern(category)
     return _lf.filter(
         pl.col("categories").str.contains(pattern)
         & pl.col("authors_parsed")
@@ -582,7 +637,7 @@ def tab_drill_down():
     st.header("Drill Down Explorer")
     st.markdown("Click a tile to drill deeper: **Domain → Category → Author → Papers**")
 
-    lf = load_data()
+    lf = data_loader.load_data()
     pc, _ = precompute_category_data(lf)
 
     for k in ["drill_domain", "drill_cat", "drill_author"]:
@@ -772,6 +827,26 @@ def _render_papers(lf):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    if "data_source" not in st.session_state:
+        st.session_state.data_source = "auto"
+
+    with st.sidebar:
+        st.radio(
+            "Data source",
+            ["auto", "local", "remote (HuggingFace)"],
+            index=["auto", "local", "remote (HuggingFace)"].index(
+                st.session_state.data_source
+            ),
+            key="data_source",
+            help="auto: local sample if available, otherwise download from HuggingFace",
+        )
+        src = st.session_state.data_source
+        if src == "remote (HuggingFace)":
+            st.caption("Dataset: 2.99M arXiv papers (HuggingFace)")
+        else:
+            st.caption("Dataset: 1M arXiv papers (local sample)")
+        st.caption("Built with Streamlit + Polars + Plotly")
+
     tab1, tab2, tab3, tab4 = st.tabs([
         "Category Network", "Co-authorship Network", "Stats", "Drill Down",
     ])

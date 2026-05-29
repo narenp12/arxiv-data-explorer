@@ -1,13 +1,16 @@
 import sys
 import os
-from unittest.mock import MagicMock
+import re
+from unittest.mock import MagicMock, patch
 
-# Mock streamlit BEFORE any module-level code runs
-_st_mock = MagicMock()
-_st_mock.cache_data = lambda f=None, **kw: f if callable(f) else (lambda g: g)
-_st_mock.session_state = {}
-_st_mock.spinner = lambda msg=None: MagicMock().__enter__.return_value
-sys.modules["streamlit"] = _st_mock
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+from shared_mock import install_streamlit_mock
+install_streamlit_mock()
+
+SRC = os.path.join(HERE, "..", "arxiv_explorer")
+sys.path.insert(0, SRC)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "..", "arxiv_explorer")
@@ -19,6 +22,7 @@ import polars as pl
 import plotly.graph_objects as go
 import network_app as m
 import labels
+import data_loader
 
 
 class TestSubjectColor(unittest.TestCase):
@@ -205,6 +209,746 @@ class TestLabels(unittest.TestCase):
             labels.readable_column("authors_parsed"),
             "Authors (structured)"
         )
+
+
+# ---------------------------------------------------------------------------
+# labels.COLUMN_HELP
+# ---------------------------------------------------------------------------
+class TestColumnHelp(unittest.TestCase):
+    def test_all_keys_have_descriptions(self):
+        for key, desc in labels.COLUMN_HELP.items():
+            with self.subTest(key=key):
+                self.assertTrue(len(desc) > 0, f"Empty description for {key}")
+
+    def test_source_columns_present(self):
+        source = {"id", "submitter", "authors", "title", "comments",
+                   "journal-ref", "doi", "report-no", "categories",
+                   "license", "abstract", "versions", "update_date", "authors_parsed"}
+        for col in source:
+            with self.subTest(col=col):
+                self.assertIn(col, labels.COLUMN_HELP)
+
+    def test_derived_columns_present(self):
+        derived = {"year", "month", "n_cats", "n_authors", "n_versions",
+                    "title_len", "abstract_len", "has_pages", "has_figures",
+                    "pct", "relative", "papers", "count", "filled_pct", "domain"}
+        for col in derived:
+            with self.subTest(col=col):
+                self.assertIn(col, labels.COLUMN_HELP)
+
+    def test_no_duplicate_keys(self):
+        self.assertEqual(len(labels.COLUMN_HELP), len(set(labels.COLUMN_HELP.keys())))
+
+
+# ---------------------------------------------------------------------------
+# _top_authors  (the full_name Polars expression that had the .str.strip() bug)
+# ---------------------------------------------------------------------------
+class TestTopAuthors(unittest.TestCase):
+    def test_full_name_first_last(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [[["Smith", "John", ""], ["Doe", "Jane", ""]]],
+        }).lazy()
+        result = m._top_authors(lf)
+        names = result["full_name"].to_list()
+        self.assertIn("John Smith", names)
+        self.assertIn("Jane Doe", names)
+
+    def test_empty_first_name(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [[["Einstein", "", ""]]],
+        }).lazy()
+        result = m._top_authors(lf)
+        self.assertIn("Einstein", result["full_name"].to_list())
+
+    def test_counts_aggregate(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""]],
+            ],
+        }).lazy()
+        result = m._top_authors(lf)
+        by_name = {r["full_name"]: r["count"] for r in result.iter_rows(named=True)}
+        self.assertEqual(by_name["John Smith"], 2)
+        self.assertEqual(by_name["Jane Doe"], 1)
+
+    def test_top_20_limit(self):
+        authors = [[[f"Last{i}", f"First{i}", ""]] for i in range(30)]
+        lf = pl.DataFrame({"authors_parsed": authors}).lazy()
+        result = m._top_authors(lf)
+        self.assertLessEqual(len(result), 20)
+
+    def test_sorted_descending(self):
+        authors = [[["Common", "Very", ""]]] * 10 + [[["Rare", "A", ""]]] * 2
+        lf = pl.DataFrame({"authors_parsed": authors}).lazy()
+        result = m._top_authors(lf)
+        counts = result["count"].to_list()
+        self.assertEqual(counts, sorted(counts, reverse=True))
+
+    def test_empty_data(self):
+        lf = pl.DataFrame({
+            "authors_parsed": pl.Series([], dtype=pl.List(pl.List(pl.Utf8))),
+        }).lazy()
+        result = m._top_authors(lf)
+        self.assertEqual(len(result), 0)
+
+
+# ---------------------------------------------------------------------------
+# precompute_category_data
+# ---------------------------------------------------------------------------
+class TestPrecomputeCategoryData(unittest.TestCase):
+    def test_basic_paper_counts(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI stat.ML", "math.AT cs.AI", "stat.ML"],
+        }).lazy()
+        pc, _ = m.precompute_category_data(lf)
+        by_cat = {r["categories"]: r["count"] for r in pc.iter_rows(named=True)}
+        self.assertEqual(by_cat["cs.AI"], 2)
+        self.assertEqual(by_cat["math.AT"], 1)
+        self.assertEqual(by_cat["stat.ML"], 2)
+
+    def test_cooccurrence_generated(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI stat.ML", "cs.AI math.AT"],
+        }).lazy()
+        _, cooc = m.precompute_category_data(lf)
+        self.assertGreater(len(cooc), 0)
+
+    def test_category_aliasing(self):
+        lf = pl.DataFrame({
+            "categories": ["math-ph cs.AI"],
+        }).lazy()
+        pc, _ = m.precompute_category_data(lf)
+        cats = pc["categories"].to_list()
+        self.assertIn("math.MP", cats)
+        self.assertNotIn("math-ph", cats)
+
+    def test_deduplicates_per_paper(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI cs.AI"],
+        }).lazy()
+        pc, _ = m.precompute_category_data(lf)
+        row = pc.filter(pl.col("categories") == "cs.AI")
+        self.assertEqual(row["count"][0], 1)
+
+    def test_no_cooc_same_category(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI"],
+        }).lazy()
+        _, cooc = m.precompute_category_data(lf)
+        self.assertEqual(len(cooc), 0)
+
+    def test_multiple_cooc_pairs(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI stat.ML math.AT"],
+        }).lazy()
+        _, cooc = m.precompute_category_data(lf)
+        pairs = {(r["categories"], r["categories_b"]) for r in cooc.iter_rows(named=True)}
+        self.assertIn(("cs.AI", "math.AT"), pairs)
+        self.assertIn(("cs.AI", "stat.ML"), pairs)
+        self.assertIn(("math.AT", "stat.ML"), pairs)
+
+    def test_all_aliases_mapped(self):
+        for alias, target in m._CATEGORY_ALIASES.items():
+            with self.subTest(alias=alias):
+                lf = pl.DataFrame({"categories": [alias]}).lazy()
+                pc, _ = m.precompute_category_data(lf)
+                self.assertIn(target, pc["categories"].to_list())
+                self.assertNotIn(alias, pc["categories"].to_list())
+
+
+# ---------------------------------------------------------------------------
+# precompute_author_data
+# ---------------------------------------------------------------------------
+class TestPrecomputeAuthorData(unittest.TestCase):
+    def setUp(self):
+        self.lf = pl.DataFrame({
+            "authors": ["John Smith", "Jane Doe and John Smith", "Bob Wilson"],
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""], ["Smith", "John", ""]],
+                [["Wilson", "Bob", ""]],
+            ],
+        }).lazy()
+
+    def test_match_found(self):
+        matched, coauthors, rows, count = m.precompute_author_data(self.lf, "Smith")
+        self.assertEqual(count, 2)
+        self.assertIn("John Smith", matched)
+
+    def test_no_match_returns_none(self):
+        matched, _, _, count = m.precompute_author_data(self.lf, "XYZ")
+        self.assertEqual(count, 0)
+        self.assertIsNone(matched)
+
+    def test_coauthor_papers_count(self):
+        _, coauthors, _, _ = m.precompute_author_data(self.lf, "Smith")
+        self.assertIn("Jane Doe", coauthors)
+        self.assertEqual(coauthors["Jane Doe"], 1)
+
+    def test_center_excluded_from_coauthors(self):
+        _, coauthors, _, _ = m.precompute_author_data(self.lf, "Smith")
+        self.assertNotIn("John Smith", coauthors)
+
+    def test_full_name_format(self):
+        matched, _, _, _ = m.precompute_author_data(self.lf, "Smith")
+        for name in matched:
+            self.assertIn("John Smith", name)
+
+    def test_empty_authors_parsed(self):
+        lf = pl.DataFrame({
+            "authors": ["No One"],
+            "authors_parsed": [[["", "", ""]]],
+        }).lazy()
+        matched, coauthors, rows, count = m.precompute_author_data(lf, "No")
+        self.assertEqual(count, 0)
+        self.assertEqual(matched, set())
+
+    def test_case_sensitive(self):
+        matched, _, _, count = m.precompute_author_data(self.lf, "smith")
+        self.assertEqual(count, 0)
+
+    def test_partial_match(self):
+        matched, _, _, count = m.precompute_author_data(self.lf, "John")
+        self.assertGreater(count, 0)
+
+    def test_rows_cache_structure(self):
+        _, _, rows, _ = m.precompute_author_data(self.lf, "Smith")
+        for paper_coauthors in rows:
+            for name in paper_coauthors:
+                self.assertNotIn("Smith", name)
+
+
+# ---------------------------------------------------------------------------
+# _domain_counts
+# ---------------------------------------------------------------------------
+class TestDomainCounts(unittest.TestCase):
+    def test_domain_extraction(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "cs.LG", "math.AT", "stat.ML", "cs.CV"],
+            "count": [100, 80, 60, 40, 30],
+        })
+        result = m._domain_counts(pc)
+        domains = {r["domain"]: r["papers"] for r in result.iter_rows(named=True)}
+        self.assertEqual(domains["cs"], 210)
+        self.assertEqual(domains["math"], 60)
+        self.assertEqual(domains["stat"], 40)
+
+    def test_subcategory_count(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "cs.LG", "cs.CV"],
+            "count": [100, 80, 30],
+        })
+        result = m._domain_counts(pc)
+        cs_row = result.filter(pl.col("domain") == "cs")
+        self.assertEqual(cs_row["subcategories"][0], 3)
+
+    def test_sorted_by_papers_descending(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "math.AT", "stat.ML"],
+            "count": [100, 200, 50],
+        })
+        result = m._domain_counts(pc)
+        self.assertEqual(result["domain"][0], "math")
+
+    def test_domain_without_dot(self):
+        pc = pl.DataFrame({
+            "categories": ["cs", "physics.optics"],
+            "count": [100, 80],
+        })
+        result = m._domain_counts(pc)
+        domains = result["domain"].to_list()
+        self.assertIn("cs", domains)
+        self.assertIn("physics", domains)
+
+    def test_empty_input(self):
+        pc = pl.DataFrame({
+            "categories": pl.Series([], dtype=pl.Utf8),
+            "count": pl.Series([], dtype=pl.Int64),
+        })
+        result = m._domain_counts(pc)
+        self.assertEqual(len(result), 0)
+
+
+# ---------------------------------------------------------------------------
+# _category_authors
+# ---------------------------------------------------------------------------
+class TestCategoryAuthors(unittest.TestCase):
+    def setUp(self):
+        self.lf = pl.DataFrame({
+            "categories": ["cs.AI", "cs.AI stat.ML", "math.AT"],
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""]],
+                [["Wilson", "Bob", ""]],
+            ],
+        }).lazy()
+
+    def test_filters_by_category(self):
+        result = m._category_authors(self.lf, "cs.AI")
+        names = result["authors_parsed"].to_list()
+        self.assertIn("Smith", names)
+        self.assertIn("Doe", names)
+        self.assertNotIn("Wilson", names)
+
+    def test_paper_count(self):
+        result = m._category_authors(self.lf, "cs.AI")
+        by_name = {r["authors_parsed"]: r["papers"] for r in result.iter_rows(named=True)}
+        self.assertEqual(by_name["Smith"], 1)
+        self.assertEqual(by_name["Doe"], 1)
+
+    def test_sorted_by_papers(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI", "cs.AI", "cs.AI stat.ML"],
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""]],
+            ],
+        }).lazy()
+        result = m._category_authors(lf, "cs.AI")
+        self.assertEqual(result["authors_parsed"][0], "Smith")
+        self.assertGreater(result["papers"][0], result["papers"][1])
+
+    def test_category_with_alias(self):
+        lf = pl.DataFrame({
+            "categories": ["math-ph"],
+            "authors_parsed": [[["Smith", "John", ""]]],
+        }).lazy()
+        result = m._category_authors(lf, "math.MP")
+        self.assertEqual(len(result), 1)
+
+    def test_empty_authors_list(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI"],
+            "authors_parsed": [[[]]],
+        }).lazy()
+        result = m._category_authors(lf, "cs.AI")
+        self.assertEqual(len(result), 0)
+
+    def test_no_matches(self):
+        result = m._category_authors(self.lf, "nonexistent.XXX")
+        self.assertEqual(len(result), 0)
+
+
+# ---------------------------------------------------------------------------
+# _author_papers
+# ---------------------------------------------------------------------------
+class TestAuthorPapers(unittest.TestCase):
+    def setUp(self):
+        self.lf = pl.DataFrame({
+            "categories": ["cs.AI", "cs.AI", "math.AT"],
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""]],
+            ],
+            "id": ["1001", "1002", "1003"],
+            "title": ["Paper A", "Paper B", "Paper C"],
+            "update_date": ["2023-01-01", "2023-06-01", "2023-03-01"],
+        }).lazy()
+
+    def test_returns_matching_papers(self):
+        result = m._author_papers(self.lf, "cs.AI", "Smith")
+        self.assertEqual(len(result), 2)
+
+    def test_returns_required_columns(self):
+        result = m._author_papers(self.lf, "cs.AI", "Smith")
+        cols = set(result.columns)
+        self.assertTrue(cols.issuperset({"id", "title", "categories", "update_date"}))
+
+    def test_sorted_by_date_desc(self):
+        result = m._author_papers(self.lf, "cs.AI", "Smith")
+        dates = result["update_date"].to_list()
+        self.assertEqual(dates, sorted(dates, reverse=True))
+
+    def test_no_match(self):
+        result = m._author_papers(self.lf, "cs.AI", "Unknown")
+        self.assertEqual(len(result), 0)
+
+    def test_with_alias(self):
+        lf = pl.DataFrame({
+            "categories": ["math-ph"],
+            "authors_parsed": [[["Smith", "John", ""]]],
+            "id": ["1001"],
+            "title": ["Paper A"],
+            "update_date": ["2023-01-01"],
+        }).lazy()
+        result = m._author_papers(lf, "math.MP", "Smith")
+        self.assertEqual(len(result), 1)
+
+
+# ---------------------------------------------------------------------------
+# _coa_cache_fig
+# ---------------------------------------------------------------------------
+class TestCoaCacheFig(unittest.TestCase):
+    def test_sets_session_state(self):
+        m.st.session_state.pop("co_fig", None)
+        G = nx.Graph()
+        G.add_node("Alice", type="center", papers=10, size=50)
+        G.add_node("Bob", type="coauthor", papers=3, size=20)
+        G.add_edge("Alice", "Bob", weight=3)
+        m._coa_cache_fig(G, "Alice")
+        self.assertIsNotNone(m.st.session_state.co_fig)
+
+    def test_returns_figure(self):
+        G = nx.Graph()
+        G.add_node("Alice", type="center", papers=5, size=30)
+        G.add_node("Bob", type="coauthor", papers=2, size=15)
+        G.add_edge("Alice", "Bob", weight=2)
+        m._coa_cache_fig(G, "Alice")
+        fig = m.st.session_state.co_fig
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_center_node_gold_color(self):
+        G = nx.Graph()
+        G.add_node("Alice", type="center", papers=5, size=30)
+        G.add_node("Bob", type="coauthor", papers=2, size=15)
+        G.add_edge("Alice", "Bob", weight=2)
+        m._coa_cache_fig(G, "Alice")
+        fig = m.st.session_state.co_fig
+        node_trace = fig.data[1]
+        self.assertIn("#ffd700", str(node_trace.marker.color))
+
+    def test_empty_graph_no_error(self):
+        G = nx.Graph()
+        try:
+            m._coa_cache_fig(G, "unknown")
+        except Exception as e:
+            self.fail(f"_coa_cache_fig raised {e}")
+
+    def test_multiple_coauthors_color_gradient(self):
+        G = nx.Graph()
+        G.add_node("Center", type="center", papers=10, size=50)
+        for i in range(5):
+            G.add_node(f"Co{i}", type="coauthor", papers=i + 1, size=10)
+            G.add_edge("Center", f"Co{i}", weight=i + 1)
+        m._coa_cache_fig(G, "Center")
+        fig = m.st.session_state.co_fig
+        colors = fig.data[1].marker.color
+        self.assertEqual(len(colors), 6)
+
+
+# ---------------------------------------------------------------------------
+# build_category_graph edge cases
+# ---------------------------------------------------------------------------
+class TestBuildCategoryGraphEdgeCases(unittest.TestCase):
+    def setUp(self):
+        self.build = m.build_category_graph
+
+    def test_empty_cooc(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "math.AT"],
+            "count": [100, 80],
+        })
+        cooc = pl.DataFrame({
+            "categories": pl.Series([], dtype=pl.Utf8),
+            "categories_b": pl.Series([], dtype=pl.Utf8),
+            "count": pl.Series([], dtype=pl.Int64),
+        })
+        G = self.build(pc, cooc, 2, 1)
+        self.assertEqual(G.number_of_nodes(), 2)
+        self.assertEqual(G.number_of_edges(), 0)
+
+    def test_single_node(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI"],
+            "count": [100],
+        })
+        cooc = pl.DataFrame({
+            "categories": pl.Series([], dtype=pl.Utf8),
+            "categories_b": pl.Series([], dtype=pl.Utf8),
+            "count": pl.Series([], dtype=pl.Int64),
+        })
+        G = self.build(pc, cooc, 1, 1)
+        self.assertEqual(G.number_of_nodes(), 1)
+
+    def test_all_edges_below_threshold(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "math.AT"],
+            "count": [100, 80],
+        })
+        cooc = pl.DataFrame({
+            "categories": ["cs.AI"],
+            "categories_b": ["math.AT"],
+            "count": [1],
+        })
+        G = self.build(pc, cooc, 2, 10)
+        self.assertEqual(G.number_of_edges(), 0)
+
+    def test_top_n_truncates_nodes(self):
+        pc = pl.DataFrame({
+            "categories": ["cs.AI", "math.AT", "stat.ML"],
+            "count": [100, 80, 60],
+        })
+        cooc = pl.DataFrame({
+            "categories": pl.Series([], dtype=pl.Utf8),
+            "categories_b": pl.Series([], dtype=pl.Utf8),
+            "count": pl.Series([], dtype=pl.Int64),
+        })
+        G = self.build(pc, cooc, 2, 1)
+        nodes = list(G.nodes())
+        self.assertIn("cs.AI", nodes)
+        self.assertIn("math.AT", nodes)
+        self.assertNotIn("stat.ML", nodes)
+
+
+# ---------------------------------------------------------------------------
+# plotly_network_graph edge cases
+# ---------------------------------------------------------------------------
+class TestPlotlyNetworkGraphEdgeCases(unittest.TestCase):
+    def setUp(self):
+        self.render = m.plotly_network_graph
+
+    def test_single_node_no_edges(self):
+        G = nx.Graph()
+        G.add_node("cs.AI", count=100)
+        fig = self.render(G)
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_only_coauthor_type_nodes(self):
+        G = nx.Graph()
+        G.add_node("Alice", type="coauthor", papers=5, size=30)
+        G.add_node("Bob", type="coauthor", papers=3, size=20)
+        G.add_edge("Alice", "Bob", weight=2)
+        fig = self.render(G)
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_no_type_attr_falls_to_category(self):
+        G = nx.Graph()
+        G.add_node("cs.AI", count=100)
+        G.add_node("math.AT", count=50)
+        G.add_edge("cs.AI", "math.AT", weight=10)
+        fig = self.render(G)
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_color_values_with_colorbar_title(self):
+        G = nx.Graph()
+        G.add_node("A", count=100)
+        G.add_node("B", count=50)
+        G.add_edge("A", "B", weight=1)
+        fig = self.render(G, color_values=[100, 50], colorbar_title="Papers")
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_node_color_map_with_color_values(self):
+        G = nx.Graph()
+        G.add_node("A", count=100)
+        G.add_node("B", count=50)
+        G.add_edge("A", "B", weight=1)
+        fig = self.render(G, color_values=[100, 50], node_color_map=lambda n, d: "#00ff00")
+        self.assertIsInstance(fig, go.Figure)
+
+
+# ---------------------------------------------------------------------------
+# data_loader
+# ---------------------------------------------------------------------------
+class TestDataLoaderLoadData(unittest.TestCase):
+    def setUp(self):
+        self._lf = pl.LazyFrame({"x": [1]})
+        self._orig_load_remote = data_loader._load_remote
+        data_loader._load_remote = MagicMock(return_value=self._lf)
+        data_loader.st.session_state.clear()
+
+    def tearDown(self):
+        data_loader._load_remote = self._orig_load_remote
+        data_loader.st.session_state.clear()
+
+    @patch("os.path.exists", return_value=True)
+    @patch("polars.scan_parquet")
+    def test_local_source(self, mock_scan, mock_exists):
+        data_loader.st.session_state["data_source"] = "local"
+        mock_scan.return_value = self._lf
+        result = data_loader.load_data()
+        mock_scan.assert_called_once_with(data_loader.LOCAL_DATA)
+        self.assertIs(result, self._lf)
+
+    @patch("os.path.exists", return_value=True)
+    @patch("polars.scan_parquet")
+    def test_auto_with_local_file(self, mock_scan, mock_exists):
+        mock_scan.return_value = self._lf
+        result = data_loader.load_data()
+        mock_scan.assert_called_once_with(data_loader.LOCAL_DATA)
+        self.assertIs(result, self._lf)
+
+    @patch("os.path.exists", return_value=False)
+    def test_auto_no_local_file(self, mock_exists):
+        result = data_loader.load_data()
+        data_loader._load_remote.assert_called_once()
+        self.assertIs(result, self._lf)
+
+    @patch("os.path.exists", return_value=False)
+    def test_remote_explicit(self, mock_exists):
+        data_loader.st.session_state["data_source"] = "remote (HuggingFace)"
+        result = data_loader.load_data()
+        data_loader._load_remote.assert_called_once()
+        self.assertIs(result, self._lf)
+
+    @patch("os.path.exists", return_value=True)
+    @patch("polars.scan_parquet")
+    def test_remote_ignores_local_file(self, mock_scan, mock_exists):
+        data_loader.st.session_state["data_source"] = "remote (HuggingFace)"
+        result = data_loader.load_data()
+        data_loader._load_remote.assert_called_once()
+        mock_scan.assert_not_called()
+
+    def test_default_source_is_auto(self):
+        self.assertNotIn("data_source", data_loader.st.session_state)
+
+
+class TestDataLoaderLoadRemote(unittest.TestCase):
+    def setUp(self):
+        self._lf = pl.LazyFrame({"x": [1]})
+
+    @patch("glob.glob", return_value=["/fake/path/f1.parquet", "/fake/path/f2.parquet"])
+    @patch("huggingface_hub.snapshot_download", return_value="/fake/path")
+    @patch("polars.scan_parquet")
+    def test_success(self, mock_scan, mock_download, mock_glob):
+        mock_scan.return_value = self._lf
+        result = data_loader._load_remote()
+        mock_download.assert_called_once_with(
+            data_loader.REMOTE_REPO, repo_type="dataset"
+        )
+        mock_scan.assert_called_once_with(
+            ["/fake/path/f1.parquet", "/fake/path/f2.parquet"]
+        )
+        self.assertIs(result, self._lf)
+
+    @patch("glob.glob", return_value=[])
+    @patch("huggingface_hub.snapshot_download", return_value="/fake/path")
+    @patch("os.path.exists", return_value=False)
+    @patch("polars.scan_parquet")
+    def test_no_parquet_files_raises(self, mock_scan, mock_exists, mock_download, mock_glob):
+        with self.assertRaises(FileNotFoundError):
+            data_loader._load_remote()
+
+    @patch("glob.glob")
+    @patch("huggingface_hub.snapshot_download")
+    @patch("os.path.exists", return_value=True)
+    @patch("polars.scan_parquet")
+    def test_fallback_to_local(self, mock_scan, mock_exists, mock_download, mock_glob):
+        mock_download.side_effect = ConnectionError("Network unreachable")
+        mock_scan.return_value = self._lf
+        result = data_loader._load_remote()
+        data_loader.st.warning.assert_called_once()
+        mock_scan.assert_called_once_with(data_loader.LOCAL_DATA)
+        self.assertIs(result, self._lf)
+
+
+# ---------------------------------------------------------------------------
+# _category_pattern
+# ---------------------------------------------------------------------------
+class TestCategoryPattern(unittest.TestCase):
+    def test_basic_pattern(self):
+        pattern = m._category_pattern("cs.AI")
+        self.assertIn(re.escape("cs.AI"), pattern)
+
+    def test_includes_aliases(self):
+        pattern = m._category_pattern("stat.ML")
+        self.assertIn(re.escape("stat.ML"), pattern)
+
+    def test_matches_string(self):
+        pattern = m._category_pattern("cs.AI")
+        self.assertIsNotNone(re.search(pattern, "cs.AI stat.ML"))
+        self.assertIsNotNone(re.search(pattern, "cs.AI"))
+
+    def test_does_not_match_substring(self):
+        pattern = m._category_pattern("cs.AI")
+        # Should not match "cs.AI2" or similar
+        self.assertIsNone(re.search(pattern, "cs.AI2"))
+
+    def test_empty_category(self):
+        pattern = m._category_pattern("")
+        self.assertTrue(pattern)
+
+
+# ---------------------------------------------------------------------------
+# _author_stats
+# ---------------------------------------------------------------------------
+class TestAuthorStats(unittest.TestCase):
+    def test_all_categories(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [
+                [["A", "B", ""]],
+                [["C", "D", ""], ["E", "F", ""]],
+                [["G", "H", ""]] * 100,
+                [["I", "J", ""]] * 1000,
+            ],
+        }).lazy()
+        solo, multi, large, huge = m._author_stats(lf)
+        self.assertEqual(solo, 1)
+        self.assertEqual(multi, 3)
+        self.assertEqual(large, 2)
+        self.assertEqual(huge, 1)
+
+    def test_empty_data(self):
+        lf = pl.DataFrame({
+            "authors_parsed": pl.Series([], dtype=pl.List(pl.List(pl.Utf8))),
+        }).lazy()
+        solo, multi, large, huge = m._author_stats(lf)
+        self.assertEqual(solo, 0)
+        self.assertEqual(multi, 0)
+        self.assertEqual(large, 0)
+        self.assertEqual(huge, 0)
+
+
+# ---------------------------------------------------------------------------
+# _prolific_authors
+# ---------------------------------------------------------------------------
+class TestProlificAuthors(unittest.TestCase):
+    def test_returns_top_20(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [[["Smith", "John", ""]] for _ in range(25)],
+        }).lazy()
+        result = m._prolific_authors(lf)
+        self.assertEqual(len(result), 1)
+        self.assertIn("full_name", result.columns)
+        self.assertIn("relative", result.columns)
+
+    def test_relative_column(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [
+                [["Smith", "John", ""], ["Doe", "Jane", ""]],
+            ],
+        }).lazy()
+        result = m._prolific_authors(lf)
+        self.assertTrue((result["relative"] == 100).all())
+
+    def test_empty_data(self):
+        lf = pl.DataFrame({
+            "authors_parsed": pl.Series([], dtype=pl.List(pl.List(pl.Utf8))),
+        }).lazy()
+        result = m._prolific_authors(lf)
+        self.assertEqual(len(result), 0)
+
+
+# ---------------------------------------------------------------------------
+# _overlap_stats
+# ---------------------------------------------------------------------------
+class TestOverlapStats(unittest.TestCase):
+    def test_returns_total_and_multi_cat(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI stat.ML", "math.AT", "cs.AI"],
+        }).lazy()
+        total, multi_cat = m._overlap_stats(lf)
+        self.assertEqual(total, 3)
+        self.assertEqual(multi_cat, 1)
+
+    def test_all_multi_cat(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI stat.ML", "math.AT cs.LG"],
+        }).lazy()
+        total, multi_cat = m._overlap_stats(lf)
+        self.assertEqual(total, 2)
+        self.assertEqual(multi_cat, 2)
+
+    def test_no_multi_cat(self):
+        lf = pl.DataFrame({
+            "categories": ["cs.AI", "math.AT"],
+        }).lazy()
+        total, multi_cat = m._overlap_stats(lf)
+        self.assertEqual(total, 2)
+        self.assertEqual(multi_cat, 0)
 
 
 if __name__ == "__main__":

@@ -25,9 +25,18 @@ uv run pytest tests/ -v
 
 ## Data
 
-Expects `arxiv_random_sample.parquet` (1M papers) in the repo root. Schema includes `id`, `title`, `abstract`, `authors`, `authors_parsed`, `categories`, `update_date`, `license`, `comments`, `versions`, and more.
+The apps support two data sources, switchable via the sidebar:
 
-A **[data dictionary](data_dictionary.yaml)** documents all 14 source columns and 25 derived columns with types, descriptions, and example values. Both apps surface these descriptions as live help tooltips on metrics, dataframes, and section headers — hover over any labeled element for explanation.
+| Source | Size | Papers | Updates | Auto-download |
+|--------|------|--------|---------|---------------|
+| **Local** (`arxiv_random_sample.parquet`) | 1.6 GB | 1,000,000 | Manual | — |
+| **Remote** (`open-index/open-arxiv` on HuggingFace) | 1.4 GB | 2,990,000 | Weekly | First use only; cached after |
+
+When set to **auto** (default), the app uses the local file if present, otherwise downloads the remote dataset.
+
+Both sources share the same 14-column schema (`id`, `title`, `abstract`, `authors`, `authors_parsed`, `categories`, `update_date`, `license`, `comments`, `versions`, and more).
+
+A **[data dictionary](data_dictionary.yaml)** documents all source and derived columns with types, descriptions, and example values. Both apps surface these descriptions as live help tooltips on metrics, dataframes, and section headers.
 
 ## Features
 

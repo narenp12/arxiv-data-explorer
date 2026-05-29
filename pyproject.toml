@@ -10,6 +10,7 @@ dependencies = [
     "networkx>=3.4",
     "plotly>=6.7",
     "numpy>=2.4",
+    "huggingface-hub>=1.17.0",
 ]
 
 [project.optional-dependencies]
