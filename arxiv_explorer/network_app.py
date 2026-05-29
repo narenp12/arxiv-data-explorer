@@ -380,15 +380,30 @@ def tab_category_network():
 # ---------------------------------------------------------------------------
 @st.cache_data
 def _top_authors(_lf):
+    return _all_author_names(_lf).head(20)
+
+
+@st.cache_data
+def _all_author_names(_lf):
     return (
         _lf.select(pl.col("authors_parsed").list.eval(_author_full_name_expr()).alias("full_name"))
         .explode("full_name")
         .group_by("full_name")
         .agg(pl.len().alias("count"))
         .sort("count", descending=True)
-        .head(20)
         .collect()
     )
+
+
+def _rank_author_matches(author_names, query):
+    q = query.strip().lower()
+    if not q:
+        return author_names.clone()
+    return author_names.with_columns(
+        pl.when(pl.col("full_name").str.to_lowercase() == q).then(pl.lit(0))
+        .when(pl.col("full_name").str.to_lowercase().str.starts_with(q)).then(pl.lit(1))
+        .otherwise(pl.lit(2)).alias("rank")
+    ).filter(pl.col("full_name").str.to_lowercase().str.contains(q)).sort("rank", "count", descending=[False, True])
 
 
 def tab_coauthor_network():
@@ -399,11 +414,11 @@ def tab_coauthor_network():
 
     top_authors_df = _top_authors(lf)
     top_author_list = top_authors_df["full_name"].to_list()
+    all_authors_df = _all_author_names(lf)
 
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
-        author_name = st.text_input("Author name", placeholder="e.g. Yi Wang",
-                                    value=st.session_state.get("author_name", ""))
+        author_name = st.text_input("Author name", placeholder="e.g. Yi Wang", key="co_author_name")
     with c2:
         max_co = st.slider("Maximum co-authors to show", 5, 150, 40, key="co_max")
     with c3:
@@ -411,16 +426,36 @@ def tab_coauthor_network():
 
     if author_name and author_name.strip():
         q = author_name.strip().lower()
-        suggestions = [a for a in top_author_list if q in a.lower()][:5]
-        if suggestions:
-            st.caption("Suggestions:")
-            sug_cols = st.columns(min(len(suggestions), 3))
-            for i, s in enumerate(suggestions):
-                with sug_cols[i % 3]:
-                    if st.button(s, key=f"co_sug_{s}"):
-                        st.session_state.author_name = s
-                        st.session_state.co_auto_search = s
-                        st.rerun()
+        matches = _rank_author_matches(all_authors_df, author_name.strip())
+        if len(matches) > 0:
+            st.caption(f"Found {len(matches):,} matching author(s)")
+            max_p = matches["count"].max()
+            display = matches.with_columns(
+                (pl.col("count") / max_p * 100).cast(pl.Int32).alias("pct")
+            )
+            ev = st.dataframe(
+                display,
+                column_config={
+                    "full_name": st.column_config.TextColumn("Author",
+                        help="Author's full name (first + last)"),
+                    "count": st.column_config.NumberColumn("Papers", format="%d",
+                        help=labels.COLUMN_HELP["papers"]),
+                    "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
+                        min_value=0, max_value=100,
+                        help="Percentage of papers relative to the top author"),
+                    "rank": st.column_config.Column("Rank", disabled=True, width="small"),
+                },
+                hide_index=True,
+                width='stretch',
+                on_select="rerun",
+                selection_mode="single-row",
+            )
+            if ev["selection"]["rows"]:
+                idx = ev["selection"]["rows"][0]
+                selected = display["full_name"][idx]
+                st.session_state.co_author_name = selected
+                st.session_state.co_auto_search = selected
+                st.rerun()
     else:
         st.markdown("**Popular authors:** " + " • ".join(top_author_list[:10]))
 
@@ -436,7 +471,7 @@ def tab_coauthor_network():
 
     def _search_author(name, mco):
         name = name.strip()
-        st.session_state.author_name = name
+        st.session_state.co_author_name = name
         with st.spinner(f"Searching for '{name}' in 1M papers…"):
             md, cp, co, cpc = precompute_author_data(lf, name)
             if cpc == 0:
@@ -453,15 +488,15 @@ def tab_coauthor_network():
     elif search_btn and author_name and author_name.strip():
         _search_author(author_name, max_co)
 
-    if st.session_state.get("co_raw") and st.session_state.get("author_name"):
+    if st.session_state.get("co_raw") and st.session_state.get("co_author_name"):
         prev_co = st.session_state.get("co_last_max_co")
         if st.session_state.get("co_graph") is None or prev_co != max_co:
-            an = st.session_state.author_name
+            an = st.session_state.co_author_name
             _build_coa_graph(an, max_co)
 
     if "co_graph" in st.session_state and st.session_state.co_graph is not None:
         G = st.session_state.co_graph
-        an = st.session_state.author_name
+        an = st.session_state.co_author_name
         center_papers = G.nodes[an]["papers"]
 
         col1, col2 = st.columns([3, 1])
@@ -630,24 +665,26 @@ def _author_papers(_lf, category, author):
         & pl.col("authors_parsed")
         .list.eval(pl.element().list.first())
         .list.contains(author)
-    ).select("id", "title", "categories", "update_date").sort("update_date", descending=True).collect()
+    ).select("id", "title", "abstract", "authors", "categories", "update_date").sort("update_date", descending=True).collect()
 
 
 def tab_drill_down():
     st.header("Drill Down Explorer")
-    st.markdown("Click a tile to drill deeper: **Domain → Category → Author → Papers**")
+    st.markdown("Click a tile to drill deeper: **Domain → Category → Author → Papers → Paper Detail**")
 
     lf = data_loader.load_data()
     pc, _ = precompute_category_data(lf)
 
-    for k in ["drill_domain", "drill_cat", "drill_author"]:
+    for k in ["drill_domain", "drill_cat", "drill_author", "drill_paper"]:
         if k not in st.session_state:
             st.session_state[k] = None
 
     col_back, col_path = st.columns([1, 5])
     with col_back:
         if st.session_state.drill_domain and st.button("⬆ Back", width='stretch'):
-            if st.session_state.drill_author:
+            if st.session_state.drill_paper:
+                st.session_state.drill_paper = None
+            elif st.session_state.drill_author:
                 st.session_state.drill_author = None
             elif st.session_state.drill_cat:
                 st.session_state.drill_cat = None
@@ -665,12 +702,17 @@ def tab_drill_down():
         if st.session_state.drill_author:
             a = st.session_state.drill_author
             parts.append(a)
+        if st.session_state.drill_paper:
+            p = st.session_state.drill_paper
+            parts.append(f"`{p}`")
         if parts:
             st.markdown("**Path**  \n" + " › ".join(parts))
 
     st.divider()
 
-    if not st.session_state.drill_domain:
+    if st.session_state.drill_paper:
+        _paper_detail(lf)
+    elif not st.session_state.drill_domain:
         _render_domains(pc)
     elif not st.session_state.drill_cat:
         _render_categories(pc)
@@ -811,16 +853,57 @@ def _render_papers(lf):
     papers = _author_papers(lf, cat, author)
     st.caption(f"{len(papers)} papers")
 
-    for row in papers.iter_rows():
-        pid, title, cats, date = row
+    for row in papers.iter_rows(named=True):
         with st.container(border=True):
-            col_a, col_b = st.columns([4, 1])
-            with col_a:
-                st.markdown(f"[{pid}](https://arxiv.org/abs/{pid})")
-                st.markdown(f"**{title}**")
-            with col_b:
-                st.markdown(f"📅 {date}")
-            st.markdown(f"**Categories:** {labels.readable_categories(cats)}")
+            cols = st.columns([4, 1])
+            with cols[0]:
+                st.markdown(f"[{row['id']}](https://arxiv.org/abs/{row['id']})")
+                st.markdown(f"**{row['title']}**")
+            with cols[1]:
+                st.markdown(f"📅 {row['update_date']}")
+            st.markdown(f"**Categories:** {labels.readable_categories(row['categories'])}")
+            with st.expander("Show abstract"):
+                st.markdown(row.get("abstract", "") or "*(no abstract)*")
+                st.markdown(f"**Authors:** {row['authors']}")
+                if st.button("View full details →", key=f"drill_paper_{row['id']}"):
+                    st.session_state.drill_paper = row["id"]
+                    st.rerun()
+
+
+def _paper_detail(lf):
+    pid = st.session_state.drill_paper
+    st.subheader(f"Paper Detail: **{pid}**")
+    if st.button("⬆ Back to papers", width='stretch'):
+        st.session_state.drill_paper = None
+        st.rerun()
+
+    paper = lf.filter(pl.col("id") == pid).collect()
+    if len(paper) == 0:
+        st.warning(f"Paper {pid} not found.")
+        return
+
+    row = paper.row(0, named=True)
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        st.markdown(f"**{row['title']}**")
+        st.markdown(f"[arXiv:{pid}](https://arxiv.org/abs/{pid})")
+        st.markdown(f"**Authors:** {row['authors']}")
+        st.markdown(f"**Categories:** {labels.readable_categories(row['categories'])}")
+        st.markdown(f"**Updated:** {row['update_date']}")
+        if row.get("comments"):
+            st.markdown(f"**Comments:** {row['comments']}")
+        if row.get("doi"):
+            st.markdown(f"**DOI:** `{row['doi']}`")
+        if row.get("journal-ref"):
+            st.markdown(f"**Journal ref:** {row['journal-ref']}")
+    with col_b:
+        n_vers = len(row["versions"]) if row["versions"] else 0
+        n_auth = len(row["authors_parsed"]) if row["authors_parsed"] else 0
+        st.metric("Versions", n_vers)
+        st.metric("Authors", n_auth)
+
+    st.subheader("Abstract")
+    st.markdown(row.get("abstract", "") or "*(no abstract)*")
 
 
 # ---------------------------------------------------------------------------

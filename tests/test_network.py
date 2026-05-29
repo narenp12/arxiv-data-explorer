@@ -546,6 +546,8 @@ class TestAuthorPapers(unittest.TestCase):
             ],
             "id": ["1001", "1002", "1003"],
             "title": ["Paper A", "Paper B", "Paper C"],
+            "abstract": ["Abstract A", "Abstract B", "Abstract C"],
+            "authors": ["John Smith", "John Smith", "Jane Doe"],
             "update_date": ["2023-01-01", "2023-06-01", "2023-03-01"],
         }).lazy()
 
@@ -556,7 +558,7 @@ class TestAuthorPapers(unittest.TestCase):
     def test_returns_required_columns(self):
         result = m._author_papers(self.lf, "cs.AI", "Smith")
         cols = set(result.columns)
-        self.assertTrue(cols.issuperset({"id", "title", "categories", "update_date"}))
+        self.assertTrue(cols.issuperset({"id", "title", "abstract", "authors", "categories", "update_date"}))
 
     def test_sorted_by_date_desc(self):
         result = m._author_papers(self.lf, "cs.AI", "Smith")
@@ -573,6 +575,8 @@ class TestAuthorPapers(unittest.TestCase):
             "authors_parsed": [[["Smith", "John", ""]]],
             "id": ["1001"],
             "title": ["Paper A"],
+            "abstract": ["Abstract A"],
+            "authors": ["John Smith"],
             "update_date": ["2023-01-01"],
         }).lazy()
         result = m._author_papers(lf, "math.MP", "Smith")
@@ -949,6 +953,82 @@ class TestOverlapStats(unittest.TestCase):
         total, multi_cat = m._overlap_stats(lf)
         self.assertEqual(total, 2)
         self.assertEqual(multi_cat, 0)
+
+
+# ---------------------------------------------------------------------------
+# _all_author_names
+# ---------------------------------------------------------------------------
+class TestAllAuthorNames(unittest.TestCase):
+    def test_returns_all_names(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [
+                [["Smith", "John", ""]],
+                [["Smith", "John", ""]],
+                [["Doe", "Jane", ""]],
+            ],
+        }).lazy()
+        result = m._all_author_names(lf)
+        self.assertEqual(len(result), 2)
+        self.assertIn("full_name", result.columns)
+        self.assertIn("count", result.columns)
+
+    def test_empty_data(self):
+        lf = pl.DataFrame({
+            "authors_parsed": pl.Series([], dtype=pl.List(pl.List(pl.Utf8))),
+        }).lazy()
+        result = m._all_author_names(lf)
+        self.assertEqual(len(result), 0)
+
+    def test_sorted_by_count_desc(self):
+        lf = pl.DataFrame({
+            "authors_parsed": [
+                [["Z", "A", ""]] * 5,
+                [["A", "B", ""]] * 10,
+            ],
+        }).lazy()
+        result = m._all_author_names(lf)
+        self.assertEqual(result["full_name"][0], "B A")
+        self.assertEqual(result["count"][0], 10)
+
+
+# ---------------------------------------------------------------------------
+# _rank_author_matches
+# ---------------------------------------------------------------------------
+class TestRankAuthorMatches(unittest.TestCase):
+    def setUp(self):
+        self.df = pl.DataFrame({
+            "full_name": ["John Smith", "Jane Doe", "Bob Smith", "Alice Johnson"],
+            "count": [10, 20, 5, 15],
+        })
+
+    def test_exact_match_first(self):
+        result = m._rank_author_matches(self.df, "John Smith")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["full_name"][0], "John Smith")
+
+    def test_prefix_matches_ranked_before_contains(self):
+        result = m._rank_author_matches(self.df, "Smith")
+        self.assertGreater(len(result), 0)
+        # "Bob Smith" and "John Smith" both contain "Smith" — exact/longer suffix
+        # Since neither starts with "Smith", both are rank 2 (contains)
+        # Sorted by rank then count desc, so John Smith (10) then Bob Smith (5)
+
+    def test_case_insensitive(self):
+        result = m._rank_author_matches(self.df, "john smith")
+        self.assertEqual(len(result), 1)
+
+    def test_no_match(self):
+        result = m._rank_author_matches(self.df, "XYZNonexistent")
+        self.assertEqual(len(result), 0)
+
+    def test_empty_query_returns_all(self):
+        result = m._rank_author_matches(self.df, "")
+        self.assertEqual(len(result), 4)
+
+    def test_starts_with_ranked_first(self):
+        result = m._rank_author_matches(self.df, "Bob")
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["full_name"][0], "Bob Smith")
 
 
 if __name__ == "__main__":

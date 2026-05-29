@@ -252,12 +252,12 @@ def page_search():
 
     with st.sidebar:
         st.header("Filters")
-        query = st.text_input("Search title / abstract", placeholder="e.g. quantum gravity")
+        query = st.text_input("Search title / abstract", placeholder="e.g. quantum gravity", key="search_query")
         all_cats = ["All"] + _search_categories(lf)
-        category = st.selectbox("Category", all_cats)
+        category = st.selectbox("Category", all_cats, key="search_category")
         year_min, year_max = _search_year_range(lf)
-        year_range = st.slider("Year range", year_min, year_max, (year_min, year_max))
-        author = st.text_input("Author", placeholder="e.g. de Leeuw")
+        year_range = st.slider("Year range", year_min, year_max, (year_min, year_max), key="search_year_range")
+        author = st.text_input("Author", placeholder="e.g. de Leeuw", key="search_author")
         search_btn = st.button("Search", type="primary", width='stretch')
 
     if "search_results" not in st.session_state:
