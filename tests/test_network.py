@@ -470,13 +470,13 @@ class TestPrecomputeAuthorData(unittest.TestCase):
         ).lazy()
         matched, coauthors, rows, count = m.precompute_author_data("No")
         self.assertEqual(count, 0)
-        self.assertEqual(matched, set())
+        self.assertIsNone(matched)
 
     @patch("data_loader.load_data")
-    def test_case_sensitive(self, mock_load):
+    def test_case_insensitive(self, mock_load):
         mock_load.return_value = self.lf
         matched, _, _, count = m.precompute_author_data("smith")
-        self.assertEqual(count, 0)
+        self.assertEqual(count, 2)
 
     @patch("data_loader.load_data")
     def test_partial_match(self, mock_load):

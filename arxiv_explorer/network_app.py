@@ -160,50 +160,54 @@ def build_category_graph(pc_df, cooc_df, top_n, min_cooc):
 
 def precompute_author_data(author_name):
     lf = data_loader.load_data()
-    papers = (
-        lf.filter(pl.col("authors").str.contains(author_name, literal=True))
-        .select(pl.col("authors_parsed"))
+    q = author_name.lower()
+
+    def _name_expr():
+        e = pl.element()
+        return (
+            e.list.get(1, null_on_oob=True).fill_null("")
+            + " "
+            + e.list.get(0, null_on_oob=True).fill_null("")
+        ).str.strip_chars()
+
+    df = (
+        lf.filter(pl.col("authors").str.to_lowercase().str.contains(q, literal=True))
+        .select("authors_parsed")
+        .with_row_index("_idx")
+        .with_columns(
+            pl.col("authors_parsed").list.eval(_name_expr()).alias("_names")
+        )
+        .with_columns(
+            pl.col("_names")
+            .list.eval(pl.element().str.to_lowercase().str.contains(q))
+            .alias("_flags")
+        )
+        .with_columns(pl.col("_flags").list.any().alias("_paper_match"))
+        .filter(pl.col("_paper_match"))
         .collect()
     )
 
-    if len(papers) == 0:
+    if len(df) == 0:
         return None, [], [], 0
 
-    names_df = papers.with_columns(
-        pl.col("authors_parsed").list.eval(_author_full_name_expr()).alias("full_names")
-    )
+    data = df.to_dict(as_series=False)
+    matched_names: set[str] = set()
+    coauthor_counts: dict[str, int] = {}
+    rows_cache: list[list[str]] = []
 
-    exploded = names_df.with_row_index().explode("full_names")
+    for names, flags in zip(data["_names"], data["_flags"]):
+        coauthors = []
+        for name, flag in zip(names, flags):
+            if flag:
+                matched_names.add(name)
+            else:
+                coauthors.append(name)
+        rows_cache.append(coauthors)
+        for c in coauthors:
+            coauthor_counts[c] = coauthor_counts.get(c, 0) + 1
 
-    q = author_name.lower()
-    with_match = exploded.with_columns(
-        pl.col("full_names").str.to_lowercase().str.contains(q).alias("is_match")
-    )
-
-    center_paper_count = (
-        with_match.filter(pl.col("is_match")).select(pl.col("index").n_unique()).item()
-    )
-
-    matched_names = set(
-        with_match.filter(pl.col("is_match"))["full_names"].unique().to_list()
-    )
-
-    paper_with_match = with_match.filter(pl.col("is_match")).select("index").unique()
-    coauthors = with_match.join(paper_with_match, on="index").filter(
-        ~pl.col("is_match")
-    )
-    coauthor_counts = (
-        coauthors.group_by("full_names")
-        .agg(pl.len().alias("count"))
-        .sort("count", descending=True)
-    )
-    coauthor_papers = dict(coauthor_counts.iter_rows())
-
-    rows_cache = (
-        coauthors.group_by("index", maintain_order=True)
-        .agg(pl.col("full_names"))
-        .select("full_names")
-    )["full_names"].to_list()
+    coauthor_papers = dict(sorted(coauthor_counts.items(), key=lambda x: -x[1]))
+    center_paper_count = len(data["_idx"])
 
     return matched_names, coauthor_papers, rows_cache, center_paper_count
 
