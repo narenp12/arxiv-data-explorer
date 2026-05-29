@@ -769,8 +769,7 @@ def tab_coauthor_network():
                 for i, (u, v, data) in enumerate(edges[:20]):
                     other = v if u == an else u
                     w = data.get("weight", 1)
-                    papers = G.nodes[other].get("papers", 0)
-                    ca, cb, cc = st.columns([2, 1, 1])
+                    ca, cb = st.columns([3, 1])
                     with ca:
                         if st.button(
                             other, key=f"coa_{i}", help=f"Explore {other}'s network"
@@ -779,9 +778,7 @@ def tab_coauthor_network():
                             st.session_state.co_auto_search = other
                             st.rerun()
                     with cb:
-                        st.markdown(f"{w} paper{'s' if w != 1 else ''}")
-                    with cc:
-                        st.markdown(f"{papers:,} total")
+                        st.markdown(f"{w} {'papers' if w != 1 else 'paper'}")
 
     else:
         if author_name and author_name.strip():
