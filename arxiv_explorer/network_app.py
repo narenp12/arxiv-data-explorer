@@ -158,12 +158,11 @@ def build_category_graph(pc_df, cooc_df, top_n, min_cooc):
     return G
 
 
-@st.cache_data
 def precompute_author_data(author_name):
     lf = data_loader.load_data()
     papers = (
         lf.filter(pl.col("authors").str.contains(author_name, literal=True))
-        .select("authors", "authors_parsed")
+        .select(pl.col("authors_parsed"))
         .collect()
     )
 
@@ -667,7 +666,9 @@ def tab_coauthor_network():
     def _search_author(name, mco):
         name = name.strip()
         st.session_state.co_author_name = name
-        with st.spinner(f"Searching for '{name}' in 1M papers…"):
+        source = st.session_state.get("data_source", "local sample")
+        paper_count = "2.99M" if source == "remote (HuggingFace)" else "1M"
+        with st.spinner(f"Searching for '{name}' in {paper_count} papers…"):
             try:
                 md, cp, co, cpc = precompute_author_data(name)
             except Exception as e:
