@@ -156,26 +156,28 @@ CATEGORY_LABELS = {
 }
 
 # Old/renamed categories
-CATEGORY_LABELS.update({
-    "chao-dyn": "Chaotic Dynamics (now nlin.CD)",
-    "q-alg": "Quantum Algebra (now math.QA)",
-    "solv-int": "Exactly Solvable & Integrable Systems (now nlin.SI)",
-    "alg-geom": "Algebraic Geometry (now math.AG)",
-    "cmp-lg": "Computation & Language (now cs.CL)",
-    "patt-sol": "Pattern Formation & Solitons (now nlin.PS)",
-    "dg-ga": "Differential Geometry (now math.DG)",
-    "adap-org": "Adaptation & Self-Organizing Systems (now nlin.AO)",
-    "funct-an": "Functional Analysis (now math.FA)",
-    "mtrl-th": "Materials Theory (now cond-mat.mtrl-sci)",
-    "chem-ph": "Chemical Physics (now physics.chem-ph)",
-    "comp-gas": "Cellular Automata & Lattice Gases (now nlin.CG)",
-    "supr-con": "Superconductivity (now cond-mat.supr-con)",
-    "atom-ph": "Atomic Physics (now physics.atom-ph)",
-    "acc-phys": "Accelerator Physics (now physics.acc-ph)",
-    "plasm-ph": "Plasma Physics (now physics.plasm-ph)",
-    "ao-sci": "Atmospheric & Oceanic Science (now physics.ao-ph)",
-    "bayes-an": "Bayesian Analysis",
-})
+CATEGORY_LABELS.update(
+    {
+        "chao-dyn": "Chaotic Dynamics (now nlin.CD)",
+        "q-alg": "Quantum Algebra (now math.QA)",
+        "solv-int": "Exactly Solvable & Integrable Systems (now nlin.SI)",
+        "alg-geom": "Algebraic Geometry (now math.AG)",
+        "cmp-lg": "Computation & Language (now cs.CL)",
+        "patt-sol": "Pattern Formation & Solitons (now nlin.PS)",
+        "dg-ga": "Differential Geometry (now math.DG)",
+        "adap-org": "Adaptation & Self-Organizing Systems (now nlin.AO)",
+        "funct-an": "Functional Analysis (now math.FA)",
+        "mtrl-th": "Materials Theory (now cond-mat.mtrl-sci)",
+        "chem-ph": "Chemical Physics (now physics.chem-ph)",
+        "comp-gas": "Cellular Automata & Lattice Gases (now nlin.CG)",
+        "supr-con": "Superconductivity (now cond-mat.supr-con)",
+        "atom-ph": "Atomic Physics (now physics.atom-ph)",
+        "acc-phys": "Accelerator Physics (now physics.acc-ph)",
+        "plasm-ph": "Plasma Physics (now physics.plasm-ph)",
+        "ao-sci": "Atmospheric & Oceanic Science (now physics.ao-ph)",
+        "bayes-an": "Bayesian Analysis",
+    }
+)
 
 
 def readable_category(code):
@@ -256,3 +258,7 @@ COLUMN_HELP = {
     "subcategories": "Number of sub-categories within this domain",
     "_row_idx": "Internal row index for joining operations (not displayed)",
 }
+
+
+def strip_latex(text: str) -> str:
+    return text or ""

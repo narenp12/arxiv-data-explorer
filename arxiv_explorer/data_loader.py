@@ -10,37 +10,36 @@ REMOTE_REPO = "open-index/open-arxiv"
 def load_data() -> pl.LazyFrame:
     """Return a LazyFrame from the selected data source.
     Not cached (just a file-open), but _load_remote is cached."""
-    source = st.session_state.get("data_source", "auto")
-    if source == "local" or (source == "auto" and os.path.exists(LOCAL_DATA)):
-        return pl.scan_parquet(LOCAL_DATA)
+    source = st.session_state.get("data_source", "local sample")
+    if source == "local sample":
+        if os.path.exists(LOCAL_DATA):
+            return pl.scan_parquet(LOCAL_DATA)
+        st.info("Local sample not found, loading from HuggingFace…")
     return _load_remote()
 
 
 def render_sidebar_data_source():
     """Render the data source radio and caption in the sidebar.
     Shared between app.py and network_app.py."""
-    prev = st.session_state.get("data_source")
     if "data_source" not in st.session_state:
-        st.session_state.data_source = "auto"
-    # Handle case where session state has invalid value (e.g., from old version)
-    options = ["auto", "local", "remote (HuggingFace)"]
-    if st.session_state.data_source not in options:
-        st.session_state.data_source = "auto"
+        st.session_state.data_source = "local sample"
+    prev = st.session_state.get("_prev_data_source")
     st.sidebar.markdown("#### Data Source")
+    options = ["local sample", "remote (HuggingFace)"]
     st.sidebar.radio(
         "Source",
         options,
         index=options.index(st.session_state.data_source),
         key="data_source",
         label_visibility="collapsed",
-        help="auto: local sample if available, otherwise download from HuggingFace",
     )
     curr = st.session_state.data_source
     if prev is not None and prev != curr:
         st.cache_data.clear()
         st.cache_resource.clear()
-    src = curr
-    if src == "remote (HuggingFace)":
+        st.session_state._data_reset = True
+    st.session_state._prev_data_source = curr
+    if curr == "remote (HuggingFace)":
         st.sidebar.caption(":cloud: 2.99M arXiv papers (HuggingFace)")
     else:
         st.sidebar.caption(":computer: 1M arXiv papers (local sample)")
@@ -58,7 +57,36 @@ def _load_remote() -> pl.LazyFrame:
         files = sorted(glob.glob(os.path.join(path, "**", "*.parquet"), recursive=True))
         if not files:
             raise FileNotFoundError("No parquet files found in the downloaded dataset")
-        return pl.scan_parquet(files)
+        lf = pl.scan_parquet(files)
+        schema = lf.collect_schema()
+        renames = {}
+        if "journal_ref" in schema and "journal-ref" not in schema:
+            renames["journal_ref"] = "journal-ref"
+        if "report_no" in schema and "report-no" not in schema:
+            renames["report_no"] = "report-no"
+        if renames:
+            lf = lf.rename(renames)
+        exprs = []
+        if isinstance(schema.get("authors_parsed"), pl.String):
+            exprs.append(
+                pl.col("authors_parsed").str.json_decode(pl.List(pl.List(pl.Utf8)))
+            )
+        if isinstance(schema.get("versions"), pl.String):
+            exprs.append(
+                pl.col("versions").str.json_decode(
+                    pl.List(
+                        pl.Struct(
+                            [
+                                pl.Field("version", pl.Utf8),
+                                pl.Field("created", pl.Utf8),
+                            ]
+                        )
+                    )
+                )
+            )
+        if exprs:
+            lf = lf.with_columns(*exprs)
+        return lf
     except (ImportError, OSError, FileNotFoundError) as e:
         if os.path.exists(LOCAL_DATA):
             st.warning(
