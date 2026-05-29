@@ -13,6 +13,7 @@ sys.path.insert(0, SRC)
 import unittest
 import polars as pl
 import numpy as np
+import plotly.graph_objects as go
 import app
 
 
@@ -288,7 +289,29 @@ class TestGetLicenseCounts(unittest.TestCase):
         counts = dict(zip(result["license_short"], result["count"]))
         self.assertEqual(counts.get("Other"), 1)
 
+    def test_cc_by_nc_sa_4_0(self):
+        lf = pl.DataFrame({
+            "license": ["http://creativecommons.org/licenses/by-nc-sa/4.0/"],
+        }).lazy()
+        result = app.get_license_counts(lf)
+        counts = dict(zip(result["license_short"], result["count"]))
+        self.assertEqual(counts.get("CC BY-NC-SA 4.0"), 1)
 
+    def test_cc_by_sa_4_0(self):
+        lf = pl.DataFrame({
+            "license": ["http://creativecommons.org/licenses/by-sa/4.0/"],
+        }).lazy()
+        result = app.get_license_counts(lf)
+        counts = dict(zip(result["license_short"], result["count"]))
+        self.assertEqual(counts.get("CC BY-SA 4.0"), 1)
+
+    def test_cc0_1_0(self):
+        lf = pl.DataFrame({
+            "license": ["http://creativecommons.org/publicdomain/zero/1.0/"],
+        }).lazy()
+        result = app.get_license_counts(lf)
+        counts = dict(zip(result["license_short"], result["count"]))
+        self.assertEqual(counts.get("CC0 1.0"), 1)
 class TestGetNullCounts(unittest.TestCase):
     def test_all_present(self):
         lf = pl.DataFrame({
@@ -606,3 +629,45 @@ class TestCommentsStats(unittest.TestCase):
         }).lazy()
         result = app._comments_stats(lf)
         self.assertEqual(len(result), 0)
+
+
+class TestYearBarChart(unittest.TestCase):
+    def setUp(self):
+        app.st.plotly_chart.reset_mock()
+        self.df = pl.DataFrame({
+            "year": [2020, 2021, 2022],
+            "count": [100, 150, 200],
+        })
+
+    def test_calls_plotly_chart(self):
+        app._year_bar_chart(self.df)
+        app.st.plotly_chart.assert_called_once()
+
+    def test_passes_figure(self):
+        app._year_bar_chart(self.df)
+        fig = app.st.plotly_chart.call_args[0][0]
+        self.assertIsInstance(fig, go.Figure)
+
+
+class TestMonthBarChart(unittest.TestCase):
+    def setUp(self):
+        app.st.plotly_chart.reset_mock()
+        self.df = pl.DataFrame({
+            "month": [1, 2, 3],
+            "count": [50, 75, 100],
+        })
+
+    def test_calls_plotly_chart(self):
+        app._month_bar_chart(self.df, "Test Title")
+        app.st.plotly_chart.assert_called_once()
+
+    def test_passes_figure(self):
+        app._month_bar_chart(self.df, "Test Title")
+        fig = app.st.plotly_chart.call_args[0][0]
+        self.assertIsInstance(fig, go.Figure)
+
+    def test_month_names_applied(self):
+        app._month_bar_chart(self.df, "Test Title")
+        fig = app.st.plotly_chart.call_args[0][0]
+        x_vals = fig.data[0]["x"]
+        self.assertEqual(list(x_vals), ["Jan", "Feb", "Mar"])

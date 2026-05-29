@@ -9,7 +9,7 @@ dataset:
   local_rows: 1_000_000
   remote_rows: 2_990_000
   total_columns: 14
-  total_derived_columns: 26
+  total_derived_columns: 27
 
 columns:
 
@@ -135,10 +135,12 @@ columns:
     avg_length_per_paper: 1.54
     max_length_per_paper: 166
     element_schema:
-      version: string
+      version:
+        type: string
         description: Version tag (e.g., "v1", "v2")
         example: "v1"
-      created: string
+      created:
+        type: string
         description: Creation timestamp in RFC 2822 format
         example: "Mon, 11 Jul 2016 20:01:07 GMT"
     example: "[{'version': 'v1', 'created': 'Mon, 11 Jul 2016 20:01:07 GMT'}]"
@@ -161,13 +163,16 @@ columns:
     avg_length_per_paper: 4.45
     max_length_per_paper: 3435
     element_schema:
-      - last_name: string
+      - last_name:
+          type: string
           description: Author's surname
           example: "de Leeuw"
-      - first_names: string
+      - first_names:
+          type: string
           description: Author's given name(s)
           example: "Marius"
-      - suffix: string
+      - suffix:
+          type: string
           description: Suffix (typically empty)
           example: ""
     example: "['de Leeuw', 'Marius', '']"
@@ -236,6 +241,11 @@ derived_columns:
     type: uint32
     description: Number of authors, capped at 51 for histogram display
     used_in: Authors page
+
+  - name: full_name
+    type: string
+    description: Author's full name constructed as "first_name last_name" from authors_parsed
+    used_in: Network — Co-Author Search, Stats, Drill Down; Dashboard
 
   - name: papers
     type: uint32
@@ -307,6 +317,6 @@ derived_columns:
     used_in: Dashboard (data completeness chart)
 
   - name: _row_idx
-    type: UInt32
+    type: Int64
     description: Internal row index for joining operations (not displayed)
     used_in: Network — Category Network (internal)

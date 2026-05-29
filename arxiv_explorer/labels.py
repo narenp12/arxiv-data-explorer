@@ -76,6 +76,7 @@ CATEGORY_LABELS = {
     "astro-ph.HE": "Astrophysics - High Energy Astrophysical Phenomena",
     "astro-ph.IM": "Astrophysics - Instrumentation & Methods",
     "astro-ph.SR": "Astrophysics - Solar & Stellar Astrophysics",
+    "cond-mat": "Condensed Matter",
     "cond-mat.dis-nn": "Condensed Matter - Disordered Systems & Neural Networks",
     "cond-mat.mes-hall": "Condensed Matter - Mesoscale & Nanoscale Physics",
     "cond-mat.mtrl-sci": "Condensed Matter - Materials Science",
@@ -234,6 +235,7 @@ COLUMN_HELP = {
     "n_cats": "Number of research categories assigned to a paper",
     "label": "Human-readable name for an arXiv category code",
     "categories_b": "Second research area in a co-occurrence pair",
+    "full_name": "Author's full name constructed as first_name + last_name from authors_parsed",
     "license_short": "Shortened human-readable license category",
     "n_authors": "Number of authors listed on the paper",
     "n_auth_binned": "Number of authors, capped at 51 for display",
@@ -252,4 +254,5 @@ COLUMN_HELP = {
     "filled_pct": "Percentage of non-null (filled) values for this column",
     "papers": "Number of papers associated with this author, category, or domain",
     "subcategories": "Number of sub-categories within this domain",
+    "_row_idx": "Internal row index for joining operations (not displayed)",
 }

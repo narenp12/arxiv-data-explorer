@@ -200,15 +200,24 @@ def page_dashboard():
 
     total, n_cats, n_authors = _dashboard_kpis(lf)
 
+    if len(date_df) > 0:
+        date_min = date_df['date'].min().strftime('%Y-%m-%d')
+        date_max = date_df['date'].max().strftime('%Y-%m-%d')
+    else:
+        date_min = date_max = "—"
+
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Papers", f"{total:,}",
                  help="Total number of papers in this 1M arXiv sample dataset")
-    col2.metric("Date Range", f"{date_df['date'].min().strftime('%Y-%m-%d')}  →  {date_df['date'].max().strftime('%Y-%m-%d')}",
+    col2.metric("Date Range", f"{date_min}  →  {date_max}",
                  help="Earliest and most recent update dates across all papers in the dataset")
     col3.metric("Categories", f"{n_cats:,}",
                  help="Number of unique arXiv research area categories in the dataset")
     col4.metric("Authors (unique last names)", f"{n_authors:,}",
                  help="Number of unique author surnames in the dataset")
+
+    year_counts = get_year_counts(date_df)
+    month_counts = get_month_counts(date_df)
 
     c1, c2 = st.columns(2)
 
@@ -220,20 +229,25 @@ def page_dashboard():
     c1, c2 = st.columns(2)
 
     with c1:
-        top_cats = get_top_categories(lf)
-        fig = px.bar(top_cats.head(20), x="count", y="label", orientation="h",
-                     title="Top 20 Research Areas", labels={"count": "Papers", "label": ""},
-                     height=500, text_auto=True)
-        fig.update_traces(marker_color="#ab63fa")
-        fig.update_layout(yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig, width='stretch')
+        top_cats = get_top_categories(lf, n=50)
+        cats_with_domain = top_cats.with_columns(
+            pl.col("categories").str.split(".").list.first().alias("domain")
+        )
+        fig = px.treemap(
+            cats_with_domain, path=["domain", "label"], values="count",
+            title="Top Research Areas by Domain",
+            height=500, color="domain",
+        )
+        fig.update_traces(textinfo="label+value")
+        fig.update_layout(margin=dict(b=5, l=5, r=5, t=30))
+        st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
     with c2:
         lic_counts = get_license_counts(lf)
         fig = px.pie(lic_counts, values="count", names="license_short",
                      title="License Distribution", hole=0.4, height=500)
         fig.update_traces(textinfo="label+percent")
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
     st.subheader("Data Completeness", help="Proportion of non-null values for each column in the dataset")
     null_df = get_null_counts(lf)
@@ -425,11 +439,11 @@ def page_authors():
         st.subheader("Authors per Paper Distribution",
                       help=labels.COLUMN_HELP["n_authors"])
         binned = _author_distribution(lf)
-        labels = [str(i) for i in range(1, 51)] + ["51+"]
+        bin_labels = [str(i) for i in range(1, 51)] + ["51+"]
         fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
                             subplot_titles=("Authors per Paper (capped at 50)", "Zoom: 11+"))
-        fig.add_trace(go.Bar(x=labels, y=binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
-        fig.add_trace(go.Bar(x=labels[10:], y=binned["count"][10:], marker_color="#ef553b", showlegend=False), row=1, col=2)
+        fig.add_trace(go.Bar(x=bin_labels, y=binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
+        fig.add_trace(go.Bar(x=bin_labels[10:], y=binned["count"][10:], marker_color="#ef553b", showlegend=False), row=1, col=2)
         fig.update_layout(title_text="Author Count Distribution", height=450)
         st.plotly_chart(fig, width='stretch')
 
@@ -474,9 +488,9 @@ def page_trends():
         with st.spinner("Computing activity heatmap…"):
             heatmap_data = date_df.filter(pl.col("year") >= 2010).group_by(["year", "month"]).agg(pl.len().alias("count")).sort(["year", "month"])
             pivot = heatmap_data.pivot(values="count", index="year", on="month", aggregate_function="first")
-            month_map = {str(m): month_names[m - 1] for m in range(1, 13)}
+            month_map = {str(m): _MONTH_NAMES[m - 1] for m in range(1, 13)}
             z = pivot.select([pl.col(k).alias(v) for k, v in month_map.items()]).to_numpy()
-            fig = px.imshow(z, x=month_names, y=pivot["year"].to_list(),
+            fig = px.imshow(z, x=_MONTH_NAMES, y=pivot["year"].to_list(),
                             title="Activity Heatmap (Year × Month)",
                             labels={"x": "Month", "y": "Year", "color": "Papers"},
                             color_continuous_scale="blues", aspect="auto", height=600)
@@ -501,11 +515,11 @@ def page_trends():
                 .agg(pl.len().alias("count"))
                 .sort("n_vers_binned")
             )
-            labels = [str(i) for i in range(1, 21)] + ["21+"]
+            bin_labels = [str(i) for i in range(1, 21)] + ["21+"]
             fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
                                 subplot_titles=("Versions per Paper", "Zoom: 5+"))
-            fig.add_trace(go.Bar(x=labels, y=version_binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
-            fig.add_trace(go.Bar(x=labels[4:], y=version_binned["count"][4:], marker_color="#ef553b", showlegend=False), row=1, col=2)
+            fig.add_trace(go.Bar(x=bin_labels, y=version_binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
+            fig.add_trace(go.Bar(x=bin_labels[4:], y=version_binned["count"][4:], marker_color="#ef553b", showlegend=False), row=1, col=2)
             fig.update_layout(title_text="Version Distribution", height=450)
             st.plotly_chart(fig, width='stretch')
 
@@ -550,9 +564,6 @@ def page_trends():
 # Navigation
 # ---------------------------------------------------------------------------
 def main():
-    if "data_source" not in st.session_state:
-        st.session_state.data_source = "auto"
-
     pages = {
         "Dashboard": page_dashboard,
         "Search": page_search,
@@ -562,25 +573,10 @@ def main():
     }
     with st.sidebar:
         st.title("arXiv Explorer")
-        st.markdown("---")
+        st.divider()
         selected = st.radio("Navigate", list(pages.keys()), index=0)
-        st.markdown("---")
-        st.radio(
-            "Data source",
-            ["auto", "local", "remote (HuggingFace)"],
-            index=["auto", "local", "remote (HuggingFace)"].index(
-                st.session_state.data_source
-            ),
-            key="data_source",
-            help="auto: local sample if available, otherwise download from HuggingFace",
-        )
-        st.markdown("---")
-        src = st.session_state.data_source
-        if src == "remote (HuggingFace)":
-            st.caption("Dataset: 2.99M arXiv papers (HuggingFace)")
-        else:
-            st.caption("Dataset: 1M arXiv papers (local sample)")
-        st.caption("Built with Streamlit + Polars + Plotly")
+        st.divider()
+        data_loader.render_sidebar_data_source()
 
     pages[selected]()
 

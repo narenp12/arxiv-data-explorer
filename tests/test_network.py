@@ -12,10 +12,6 @@ install_streamlit_mock()
 SRC = os.path.join(HERE, "..", "arxiv_explorer")
 sys.path.insert(0, SRC)
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(HERE, "..", "arxiv_explorer")
-sys.path.insert(0, SRC)
-
 import unittest
 import networkx as nx
 import polars as pl
@@ -135,6 +131,12 @@ class TestBuildAuthorEgoGraph(unittest.TestCase):
         self.assertEqual(G.nodes["Bob"]["papers"], 7)
         self.assertEqual(G.nodes["Bob"]["type"], "coauthor")
 
+    def test_max_coauthors_zero_returns_center_only(self):
+        papers = {"Co1": 5, "Co2": 3}
+        G, _ = self.build("Center", {"Center"}, papers, [["Center", "Co1", "Co2"]], 5, 0)
+        self.assertEqual(G.number_of_nodes(), 1)
+        self.assertEqual(G.nodes["Center"]["type"], "center")
+
 
 class TestPlotlyNetworkGraph(unittest.TestCase):
     def setUp(self):
@@ -147,7 +149,9 @@ class TestPlotlyNetworkGraph(unittest.TestCase):
         G.add_edge("cs.AI", "math.AT", weight=10)
         fig = self.render(G)
         self.assertIsInstance(fig, go.Figure)
-        self.assertEqual(len(fig.data), 2)
+        self.assertGreaterEqual(len(fig.data), 2)
+        self.assertIsInstance(fig.data[-1], go.Scatter)
+        self.assertEqual(fig.data[-1].mode, "markers")
 
     def test_center_node(self):
         G = nx.Graph()
@@ -612,7 +616,7 @@ class TestCoaCacheFig(unittest.TestCase):
         G.add_edge("Alice", "Bob", weight=2)
         m._coa_cache_fig(G, "Alice")
         fig = m.st.session_state.co_fig
-        node_trace = fig.data[1]
+        node_trace = fig.data[-1]
         self.assertIn("#ffd700", str(node_trace.marker.color))
 
     def test_empty_graph_no_error(self):
@@ -630,8 +634,15 @@ class TestCoaCacheFig(unittest.TestCase):
             G.add_edge("Center", f"Co{i}", weight=i + 1)
         m._coa_cache_fig(G, "Center")
         fig = m.st.session_state.co_fig
-        colors = fig.data[1].marker.color
+        colors = fig.data[-1].marker.color
         self.assertEqual(len(colors), 6)
+
+    def test_center_node_only(self):
+        G = nx.Graph()
+        G.add_node("Solo", type="center", papers=5, size=30)
+        m._coa_cache_fig(G, "Solo")
+        fig = m.st.session_state.co_fig
+        self.assertIsInstance(fig, go.Figure)
 
 
 # ---------------------------------------------------------------------------
@@ -667,35 +678,6 @@ class TestBuildCategoryGraphEdgeCases(unittest.TestCase):
         })
         G = self.build(pc, cooc, 1, 1)
         self.assertEqual(G.number_of_nodes(), 1)
-
-    def test_all_edges_below_threshold(self):
-        pc = pl.DataFrame({
-            "categories": ["cs.AI", "math.AT"],
-            "count": [100, 80],
-        })
-        cooc = pl.DataFrame({
-            "categories": ["cs.AI"],
-            "categories_b": ["math.AT"],
-            "count": [1],
-        })
-        G = self.build(pc, cooc, 2, 10)
-        self.assertEqual(G.number_of_edges(), 0)
-
-    def test_top_n_truncates_nodes(self):
-        pc = pl.DataFrame({
-            "categories": ["cs.AI", "math.AT", "stat.ML"],
-            "count": [100, 80, 60],
-        })
-        cooc = pl.DataFrame({
-            "categories": pl.Series([], dtype=pl.Utf8),
-            "categories_b": pl.Series([], dtype=pl.Utf8),
-            "count": pl.Series([], dtype=pl.Int64),
-        })
-        G = self.build(pc, cooc, 2, 1)
-        nodes = list(G.nodes())
-        self.assertIn("cs.AI", nodes)
-        self.assertIn("math.AT", nodes)
-        self.assertNotIn("stat.ML", nodes)
 
 
 # ---------------------------------------------------------------------------

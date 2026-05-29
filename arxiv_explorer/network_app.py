@@ -212,7 +212,7 @@ def build_author_ego_graph(author_name, matched_names, coauthor_papers, rows_cac
     return G, sorted(matched_names)
 
 
-def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='Viridis', colorbar_title=None):
+def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='Viridis', colorbar_title=None, show_edge_hover=False, draw_edges=True):
     pos = nx.spring_layout(G, k=1.5, iterations=50, seed=42)
 
     center_node = None
@@ -226,13 +226,6 @@ def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='
         for node in list(pos.keys()):
             pos[node] = (pos[node][0] - cx, pos[node][1] - cy)
 
-    edge_x, edge_y = [], []
-    for u, v in G.edges():
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-
     node_x, node_y, node_text, node_size = [], [], [], []
 
     is_cat_graph = not any(d.get("type") in ("center", "coauthor") for _, d in G.nodes(data=True))
@@ -241,18 +234,18 @@ def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='
         node_x.append(pos[node][0])
         node_y.append(pos[node][1])
 
-        readable = labels.readable_category(node)
+        readable_label = labels.readable_category(node)
         paper_count = data.get('count', data.get('papers', '?'))
         if is_cat_graph:
             subj = node.split('.')[0]
             if isinstance(paper_count, int):
-                node_text.append(f"<b>{subj}</b> — {readable}<br>Papers: {paper_count:,}")
+                node_text.append(f"<b>{subj}</b> — {readable_label}<br>Papers: {paper_count:,}")
             else:
-                node_text.append(f"<b>{subj}</b> — {readable}")
+                node_text.append(f"<b>{subj}</b> — {readable_label}")
         elif isinstance(paper_count, int):
-            node_text.append(f"{readable}<br>Papers: {paper_count:,}")
+            node_text.append(f"{readable_label}<br>Papers: {paper_count:,}")
         else:
-            node_text.append(readable)
+            node_text.append(readable_label)
 
         size = data.get("size", data.get("count", 10))
         size = max(5, min(size, 80))
@@ -274,11 +267,59 @@ def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='
     else:
         marker['color'] = ['#45b7d1' for _ in G.nodes()]
 
-    edge_trace = go.Scatter(
-        x=edge_x, y=edge_y, mode='lines',
-        line=dict(width=0.5, color='rgba(100,100,100,0.3)'),
-        hoverinfo='none'
-    )
+    edge_traces = []
+    edges_with_weights = [(u, v, data.get("weight", 1)) for u, v, data in G.edges(data=True)]
+
+    if draw_edges and edges_with_weights:
+        max_w = max(w for _, _, w in edges_with_weights)
+
+        if show_edge_hover:
+            sorted_edges = sorted(edges_with_weights, key=lambda x: -x[2])
+            top_k = min(30, len(sorted_edges))
+            remaining = sorted_edges[top_k:]
+
+            for u, v, w in sorted_edges[:top_k]:
+                frac = w / max_w
+                edge_traces.append(go.Scatter(
+                    x=[pos[u][0], pos[v][0], None],
+                    y=[pos[u][1], pos[v][1], None],
+                    mode='lines',
+                    line=dict(
+                        width=1.5 + frac * 4,
+                        color=f'rgba(43,131,186,{0.3 + frac * 0.5:.2f})',
+                    ),
+                    hoverinfo='text',
+                    text=f"{labels.readable_category(u)} ↔ {labels.readable_category(v)}<br>{w:,} co-occurrences",
+                ))
+
+            if remaining:
+                ex, ey = [], []
+                for u, v, _ in remaining:
+                    ex.extend([pos[u][0], pos[v][0], None])
+                    ey.extend([pos[u][1], pos[v][1], None])
+                edge_traces.append(go.Scatter(
+                    x=ex, y=ey, mode='lines',
+                    line=dict(width=0.3, color='rgba(180,180,180,0.12)'),
+                    hoverinfo='none',
+                ))
+        else:
+            for threshold, width, color in [
+                (0.66, 2.5, "rgba(43,131,186,0.7)"),
+                (0.33, 1.2, "rgba(171,221,164,0.5)"),
+                (0.0,  0.5, "rgba(180,180,180,0.15)"),
+            ]:
+                group = [(u, v) for u, v, w in edges_with_weights if w / max_w >= threshold]
+                if not group:
+                    continue
+                ex, ey = [], []
+                for u, v in group:
+                    ex.extend([pos[u][0], pos[v][0], None])
+                    ey.extend([pos[u][1], pos[v][1], None])
+                edge_traces.append(go.Scatter(
+                    x=ex, y=ey, mode='lines',
+                    line=dict(width=width, color=color),
+                    hoverinfo='none',
+                ))
 
     node_trace = go.Scatter(
         x=node_x, y=node_y, mode='markers',
@@ -286,7 +327,7 @@ def plotly_network_graph(G, node_color_map=None, color_values=None, colorscale='
         marker=marker
     )
 
-    fig = go.Figure(data=[edge_trace, node_trace])
+    fig = go.Figure(data=edge_traces + [node_trace])
     fig.update_layout(
         title=None, showlegend=False, hovermode='closest',
         margin=dict(b=5, l=5, r=5, t=5),
@@ -319,17 +360,16 @@ def _coa_cache_fig(G, center_node):
 # ---------------------------------------------------------------------------
 def tab_category_network():
     st.header("Research Area Connections")
-    st.markdown("Each circle is a research area. Lines connect areas that frequently appear together on papers. Bigger circles = more papers.")
+    st.markdown("Select a research area to see its top co-occurring neighbors. Bigger circles = more papers.")
 
     lf = data_loader.load_data()
-
     paper_counts, cooc_counts = precompute_category_data(lf)
 
     c1, c2, c3 = st.columns([2, 2, 1])
     with c1:
-        top_n = st.slider("Number of research areas to show", 15, 100, 40, key="cat_n")
+        top_n = st.slider("Number of research areas", 15, 100, 60, key="cat_n")
     with c2:
-        min_cooc = st.slider("Minimum co-occurrences to draw a connection", 1, 100, 5, key="cat_min")
+        min_cooc = st.slider("Minimum co-occurrences", 1, 100, 5, key="cat_min")
     with c3:
         build_btn = st.button("Update Network", type="primary", width='stretch')
 
@@ -337,8 +377,6 @@ def tab_category_network():
         with st.spinner("Building category network…"):
             G = build_category_graph(paper_counts, cooc_counts, top_n, min_cooc)
             st.session_state.cat_graph = G
-            st.session_state.cat_params = (top_n, min_cooc)
-            st.session_state.cat_fig = plotly_network_graph(G, _subject_color)
         if build_btn:
             st.toast("Network updated", icon="✅")
     else:
@@ -348,31 +386,72 @@ def tab_category_network():
         st.warning("No connections meet the threshold. Try lowering the minimum.")
         return
 
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.plotly_chart(st.session_state.cat_fig, width='stretch')
+    all_nodes = sorted(G.nodes(), key=lambda n: -G.degree(n))
+    node_labels = [f"{labels.readable_category(n)} ({n})" for n in all_nodes]
+    cat_sel = st.selectbox("Choose a research area to explore", node_labels, key="cat_ego")
 
-        with col2:
-            st.metric("Research areas", G.number_of_nodes(),
-                   help="Number of distinct research area categories in the visible network")
-            st.metric("Connections", G.number_of_edges(),
-                   help="Number of co-occurrence connections between research areas")
-            st.metric("Connectivity", f"{nx.density(G):.4f}",
-                   help="Network density: fraction of possible connections that exist (0=disconnected, 1=fully connected)")
+    parts = cat_sel.rsplit(" (", 1)
+    selected_node = parts[-1][:-1] if len(parts) > 1 else parts[0]
 
-            with st.container(border=True):
-                st.subheader("Most Connected Areas")
-                degrees = sorted(G.degree, key=lambda x: -x[1])[:10]
-                for node, deg in degrees:
-                    count = G.nodes[node].get("count", 0)
-                    label = labels.readable_category(node)
-                    cols = st.columns([2, 1, 1])
-                    with cols[0]:
-                        st.markdown(f"**{label}**")
-                    with cols[1]:
-                        st.markdown(f"{deg} conn.")
-                    with cols[2]:
-                        st.markdown(f"{count:,} papers")
+    ego = nx.Graph()
+    ego.add_node(selected_node, count=G.nodes[selected_node].get("count", 0), type="center", size=60)
+    for neighbor in G.neighbors(selected_node):
+        w = G[selected_node][neighbor].get("weight", 1)
+        cnt = G.nodes[neighbor].get("count", 0)
+        ego.add_node(neighbor, count=cnt)
+        ego.add_edge(selected_node, neighbor, weight=w)
+
+    def _ego_color(node, data):
+        if data.get("type") == "center":
+            return "#ffd700"
+        return _subject_color(node, data)
+
+    fig = plotly_network_graph(ego, _ego_color)
+    st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
+    st.caption("Node size reflects paper count. The gold node is the selected research area.")
+
+    st.divider()
+
+    center_cnt = G.nodes[selected_node].get("count", 0)
+    center_label = labels.readable_category(selected_node)
+    total_cooc = sum(G[selected_node][n].get("weight", 0) for n in G.neighbors(selected_node))
+
+    st.markdown(f"### {center_label}")
+    st.caption(f"{center_cnt:,} papers · {ego.number_of_nodes() - 1} connected areas · {total_cooc:,} total co-occurrences")
+
+    col_list, col_detail = st.columns([3, 2])
+    with col_list:
+        st.subheader("Connected Areas")
+        neighbors_sorted = sorted(G.neighbors(selected_node),
+                                  key=lambda n: -G[selected_node][n].get("weight", 0))
+        for i, neighbor in enumerate(neighbors_sorted):
+            w = G[selected_node][neighbor].get("weight", 0)
+            cnt = G.nodes[neighbor].get("count", 0)
+            label = labels.readable_category(neighbor)
+            ca, cb = st.columns([3, 1])
+            with ca:
+                if st.button(label, key=f"cat_ego_{i}",
+                             help=f"{w:,} co-occurrences, {cnt:,} papers — click to explore"):
+                    st.session_state.cat_ego = f"{label} ({neighbor})"
+                    st.rerun()
+            with cb:
+                st.markdown(f"**{w:,}** co-oc")
+
+    with col_detail:
+        with st.container(border=True):
+            st.markdown("**Overview**")
+            st.metric("Papers", f"{center_cnt:,}",
+                       help="Total papers in this research area")
+            st.metric("Connected neighbors", ego.number_of_nodes() - 1,
+                       help="Number of co-occurring research areas")
+            st.metric("Co-occurrence volume", f"{total_cooc:,}",
+                       help="Sum of all co-occurrence counts with connected areas")
+
+        if st.button("Full drill-down →", key="cat_ego_drill", type="primary"):
+            domain = selected_node.split(".")[0]
+            st.session_state.drill_domain = domain
+            st.session_state.drill_cat = selected_node
+            st.toast("Open the **Drill Down** tab to explore authors and papers.", icon="🔍")
 
 
 # ---------------------------------------------------------------------------
@@ -395,11 +474,12 @@ def _all_author_names(_lf):
     )
 
 
-def _rank_author_matches(author_names, query):
+@st.cache_data
+def _rank_author_matches(_author_names, query):
     q = query.strip().lower()
     if not q:
-        return author_names.clone()
-    return author_names.with_columns(
+        return _author_names.clone()
+    return _author_names.with_columns(
         pl.when(pl.col("full_name").str.to_lowercase() == q).then(pl.lit(0))
         .when(pl.col("full_name").str.to_lowercase().str.starts_with(q)).then(pl.lit(1))
         .otherwise(pl.lit(2)).alias("rank")
@@ -418,46 +498,19 @@ def tab_coauthor_network():
 
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
-        author_name = st.text_input("Author name", placeholder="e.g. Yi Wang", key="co_author_name")
+        author_name = st.text_input("Author name", placeholder="e.g. Yi Wang", key="co_search_input")
     with c2:
-        max_co = st.slider("Maximum co-authors to show", 5, 150, 40, key="co_max")
+        max_co = st.slider("Maximum co-authors to show", 5, 150, 20, key="co_max")
     with c3:
         search_btn = st.button("Find", type="primary", width='stretch')
 
-    if author_name and author_name.strip():
-        q = author_name.strip().lower()
-        matches = _rank_author_matches(all_authors_df, author_name.strip())
-        if len(matches) > 0:
-            st.caption(f"Found {len(matches):,} matching author(s)")
-            max_p = matches["count"].max()
-            display = matches.with_columns(
-                (pl.col("count") / max_p * 100).cast(pl.Int32).alias("pct")
-            )
-            ev = st.dataframe(
-                display,
-                column_config={
-                    "full_name": st.column_config.TextColumn("Author",
-                        help="Author's full name (first + last)"),
-                    "count": st.column_config.NumberColumn("Papers", format="%d",
-                        help=labels.COLUMN_HELP["papers"]),
-                    "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
-                        min_value=0, max_value=100,
-                        help="Percentage of papers relative to the top author"),
-                    "rank": st.column_config.Column("Rank", disabled=True, width="small"),
-                },
-                hide_index=True,
-                width='stretch',
-                on_select="rerun",
-                selection_mode="single-row",
-            )
-            if ev["selection"]["rows"]:
-                idx = ev["selection"]["rows"][0]
-                selected = display["full_name"][idx]
-                st.session_state.co_author_name = selected
-                st.session_state.co_auto_search = selected
-                st.rerun()
-    else:
-        st.markdown("**Popular authors:** " + " • ".join(top_author_list[:10]))
+    # Clear graph if user clears the search box
+    if not author_name:
+        if "co_graph" in st.session_state:
+            st.session_state.pop("co_graph", None)
+            st.session_state.pop("co_raw", None)
+            st.session_state.pop("co_author_name", None)
+            st.rerun()
 
     def _build_coa_graph(an, mco):
         md, cp, co, cpc = st.session_state.co_raw
@@ -482,6 +535,7 @@ def tab_coauthor_network():
                 st.session_state.co_raw = (md, cp, co, cpc)
                 _build_coa_graph(name, mco)
 
+    # --- Run search logic (before display, so graph is ready) ---
     auto_name = st.session_state.pop("co_auto_search", None)
     if auto_name:
         _search_author(auto_name, max_co)
@@ -494,14 +548,24 @@ def tab_coauthor_network():
             an = st.session_state.co_author_name
             _build_coa_graph(an, max_co)
 
-    if "co_graph" in st.session_state and st.session_state.co_graph is not None:
+    # --- Display: Graph takes over when loaded, otherwise show search results ---
+    has_graph = "co_graph" in st.session_state and st.session_state.co_graph is not None
+
+    if has_graph:
         G = st.session_state.co_graph
         an = st.session_state.co_author_name
         center_papers = G.nodes[an]["papers"]
 
+        st.subheader(f"Collaboration Network: {an}")
+
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.plotly_chart(st.session_state.co_fig, width='stretch')
+            if st.button("← New Search", key="co_back", type="secondary"):
+                st.session_state.pop("co_graph", None)
+                st.session_state.pop("co_raw", None)
+                st.session_state.pop("co_author_name", None)
+                st.rerun()
+            st.plotly_chart(st.session_state.co_fig, width='stretch', config={'displayModeBar': False})
 
         with col2:
             st.metric("Papers by this author", f"{center_papers:,}",
@@ -512,28 +576,70 @@ def tab_coauthor_network():
             st.metric("Collaborations between co-authors", inter,
                        help="Number of co-author connections that exist between the author's collaborators (excluding direct links to the author)")
 
-            if "matched_names" in st.session_state:
+            if "matched_names" in st.session_state and len(st.session_state.matched_names) > 1:
                 with st.container(border=True):
-                    st.subheader("Name Matches")
+                    st.subheader("Name Variants")
+                    st.caption("Different name formats matching this author across papers")
                     for name in st.session_state.matched_names[:8]:
                         st.markdown(f"- {name}")
                     if len(st.session_state.matched_names) > 8:
                         st.caption(f"... and {len(st.session_state.matched_names) - 8} more")
 
             with st.container(border=True):
-                st.subheader("Closest Collaborators")
+                st.subheader("Co-Authors")
+                st.caption("Click a name to explore their network")
                 edges = sorted(G.edges(data=True), key=lambda e: -e[2].get("weight", 0))
-                for u, v, data in edges[:12]:
+                for i, (u, v, data) in enumerate(edges[:20]):
                     other = v if u == an else u
                     w = data.get("weight", 1)
                     papers = G.nodes[other].get("papers", 0)
-                    cols = st.columns([2, 1, 1])
-                    with cols[0]:
-                        st.markdown(f"**{other}**")
-                    with cols[1]:
+                    ca, cb, cc = st.columns([2, 1, 1])
+                    with ca:
+                        if st.button(other, key=f"coa_{i}", help=f"Explore {other}'s network"):
+                            st.session_state.co_author_name = other
+                            st.session_state.co_auto_search = other
+                            st.rerun()
+                    with cb:
                         st.markdown(f"{w} paper{'s' if w != 1 else ''}")
-                    with cols[2]:
+                    with cc:
                         st.markdown(f"{papers:,} total")
+
+    else:
+        if author_name and author_name.strip():
+            matches = _rank_author_matches(all_authors_df, author_name.strip())
+            if len(matches) > 0:
+                matches = matches.head(500)
+                st.caption(f"Found {len(matches):,} matching author(s) (showing up to 500)")
+                max_p = matches["count"].max()
+                display = matches.with_columns(
+                    (pl.col("count") / max_p * 100).cast(pl.Int32).alias("pct")
+                )
+                st.dataframe(
+                    display.drop("rank"),
+                    column_config={
+                        "full_name": st.column_config.TextColumn("Author",
+                            help="Author's full name (first + last)"),
+                        "count": st.column_config.NumberColumn("Papers", format="%d",
+                            help=labels.COLUMN_HELP["papers"]),
+                        "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
+                            min_value=0, max_value=100,
+                            help="Percentage of papers relative to the top author"),
+                    },
+                    hide_index=True,
+                    width='stretch',
+                )
+                sel_name = st.selectbox(
+                    "Choose an author to explore:",
+                    display["full_name"],
+                    key="co_pick",
+                    label_visibility="collapsed",
+                )
+                if st.button("Explore Co-Authors", key="co_explore", type="primary"):
+                    st.session_state.co_author_name = sel_name
+                    st.session_state.co_auto_search = sel_name
+                    st.rerun()
+        else:
+            st.markdown("**Popular authors:** " + " • ".join(top_author_list[:10]))
 
 
 # ---------------------------------------------------------------------------
@@ -607,7 +713,7 @@ def tab_network_stats():
                              height=400, text_auto=True)
                 fig.update_traces(marker_color="#636efa")
                 fig.update_layout(yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, width='stretch')
+                st.plotly_chart(fig, width='stretch', config={'displayModeBar': False})
 
             with col_table:
                 st.dataframe(author_counts, width='stretch', hide_index=True,
@@ -733,10 +839,9 @@ def _render_domains(pc):
             label = domain.replace("-", " ").title()
             full = _DOMAIN_NAMES.get(domain) or labels.readable_category(domain) or domain
             with st.container(border=True):
-                st.markdown(
+                st.html(
                     f"<div style='border-left:4px solid {color};padding-left:8px'>"
-                    f"<strong>{label}</strong></div>",
-                    unsafe_allow_html=True,
+                    f"<strong>{label}</strong></div>"
                 )
                 st.caption(full)
                 st.markdown(f"**{papers:,}** papers · {subs} sub-categories")
@@ -759,10 +864,9 @@ def _render_categories(pc):
             color = _subject_color(cat, {})
             label = labels.readable_category(cat)
             with st.container(border=True):
-                st.markdown(
+                st.html(
                     f"<div style='border-left:4px solid {color};padding-left:8px'>"
-                    f"<strong>{label}</strong></div>",
-                    unsafe_allow_html=True,
+                    f"<strong>{label}</strong></div>"
                 )
                 st.caption(cat)
                 st.markdown(f"**{cnt:,}** papers")
@@ -783,45 +887,10 @@ def _render_authors(lf):
     with c2:
         min_papers = st.number_input("Min papers", min_value=1, max_value=1000, value=1, key="drill_min_papers")
 
-    if search:
-        search_lc = search.strip().lower()
-        matches = data.filter(
-            pl.col("authors_parsed").str.to_lowercase().str.contains(search_lc)
-            & (pl.col("papers") >= min_papers)
-        ).head(20)
-        if len(matches) == 0:
-            st.warning(f"No authors matching '{search}' with ≥{min_papers} papers")
-        else:
-            st.caption(f"Found {len(matches):,} author(s) matching '{search}'")
-            max_p = matches["papers"].max()
-            display = matches.with_columns(
-                (pl.col("papers") / max_p * 100).cast(pl.Int32).alias("pct")
-            )
-            ev = st.dataframe(
-                display,
-                column_config={
-                    "authors_parsed": st.column_config.TextColumn("Author",
-                        help="Author's surname (last name)"),
-                    "papers": st.column_config.NumberColumn("Papers", format="%d",
-                        help=labels.COLUMN_HELP["papers"]),
-                    "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
-                        min_value=0, max_value=100,
-                        help="Percentage of papers relative to the top author in this category"),
-                },
-                hide_index=True,
-                width='stretch',
-                on_select="rerun",
-                selection_mode="single-row",
-            )
-            if ev["selection"]["rows"]:
-                idx = ev["selection"]["rows"][0]
-                st.session_state.drill_author = display["authors_parsed"][idx]
-                st.rerun()
-    else:
-        st.caption(f"Authors with ≥{min_papers} papers")
-        filtered = data.filter(pl.col("papers") >= min_papers)
-        max_p = filtered["papers"].max()
-        display = filtered.with_columns(
+    def _author_dataframe(display, caption):
+        st.caption(caption)
+        max_p = display["papers"].max()
+        display = display.with_columns(
             (pl.col("papers") / max_p * 100).cast(pl.Int32).alias("pct")
         )
         ev = st.dataframe(
@@ -844,6 +913,20 @@ def _render_authors(lf):
             idx = ev["selection"]["rows"][0]
             st.session_state.drill_author = display["authors_parsed"][idx]
             st.rerun()
+
+    if search:
+        search_lc = search.strip().lower()
+        matches = data.filter(
+            pl.col("authors_parsed").str.to_lowercase().str.contains(search_lc)
+            & (pl.col("papers") >= min_papers)
+        ).head(20)
+        if len(matches) == 0:
+            st.warning(f"No authors matching '{search}' with ≥{min_papers} papers")
+        else:
+            _author_dataframe(matches, f"Found {len(matches):,} author(s) matching '{search}'")
+    else:
+        filtered = data.filter(pl.col("papers") >= min_papers)
+        _author_dataframe(filtered, f"Authors with ≥{min_papers} papers")
 
 
 def _render_papers(lf):
@@ -910,25 +993,7 @@ def _paper_detail(lf):
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    if "data_source" not in st.session_state:
-        st.session_state.data_source = "auto"
-
-    with st.sidebar:
-        st.radio(
-            "Data source",
-            ["auto", "local", "remote (HuggingFace)"],
-            index=["auto", "local", "remote (HuggingFace)"].index(
-                st.session_state.data_source
-            ),
-            key="data_source",
-            help="auto: local sample if available, otherwise download from HuggingFace",
-        )
-        src = st.session_state.data_source
-        if src == "remote (HuggingFace)":
-            st.caption("Dataset: 2.99M arXiv papers (HuggingFace)")
-        else:
-            st.caption("Dataset: 1M arXiv papers (local sample)")
-        st.caption("Built with Streamlit + Polars + Plotly")
+    data_loader.render_sidebar_data_source()
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "Category Network", "Co-authorship Network", "Stats", "Drill Down",
