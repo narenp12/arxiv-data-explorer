@@ -426,51 +426,68 @@ class TestPrecomputeAuthorData(unittest.TestCase):
             }
         ).lazy()
 
-    def test_match_found(self):
-        matched, coauthors, rows, count = m.precompute_author_data(self.lf, "Smith")
+    @patch("data_loader.load_data")
+    def test_match_found(self, mock_load):
+        mock_load.return_value = self.lf
+        matched, coauthors, rows, count = m.precompute_author_data("Smith")
         self.assertEqual(count, 2)
         self.assertIn("John Smith", matched)
 
-    def test_no_match_returns_none(self):
-        matched, _, _, count = m.precompute_author_data(self.lf, "XYZ")
+    @patch("data_loader.load_data")
+    def test_no_match_returns_none(self, mock_load):
+        mock_load.return_value = self.lf
+        matched, _, _, count = m.precompute_author_data("XYZ")
         self.assertEqual(count, 0)
         self.assertIsNone(matched)
 
-    def test_coauthor_papers_count(self):
-        _, coauthors, _, _ = m.precompute_author_data(self.lf, "Smith")
+    @patch("data_loader.load_data")
+    def test_coauthor_papers_count(self, mock_load):
+        mock_load.return_value = self.lf
+        _, coauthors, _, _ = m.precompute_author_data("Smith")
         self.assertIn("Jane Doe", coauthors)
         self.assertEqual(coauthors["Jane Doe"], 1)
 
-    def test_center_excluded_from_coauthors(self):
-        _, coauthors, _, _ = m.precompute_author_data(self.lf, "Smith")
+    @patch("data_loader.load_data")
+    def test_center_excluded_from_coauthors(self, mock_load):
+        mock_load.return_value = self.lf
+        _, coauthors, _, _ = m.precompute_author_data("Smith")
         self.assertNotIn("John Smith", coauthors)
 
-    def test_full_name_format(self):
-        matched, _, _, _ = m.precompute_author_data(self.lf, "Smith")
+    @patch("data_loader.load_data")
+    def test_full_name_format(self, mock_load):
+        mock_load.return_value = self.lf
+        matched, _, _, _ = m.precompute_author_data("Smith")
         for name in matched:
             self.assertIn("John Smith", name)
 
-    def test_empty_authors_parsed(self):
-        lf = pl.DataFrame(
+    @patch("data_loader.load_data")
+    def test_empty_authors_parsed(self, mock_load):
+        mock_load.return_value = pl.DataFrame(
             {
                 "authors": ["No One"],
                 "authors_parsed": [[["", "", ""]]],
             }
         ).lazy()
-        matched, coauthors, rows, count = m.precompute_author_data(lf, "No")
+        matched, coauthors, rows, count = m.precompute_author_data("No")
         self.assertEqual(count, 0)
         self.assertEqual(matched, set())
 
-    def test_case_sensitive(self):
-        matched, _, _, count = m.precompute_author_data(self.lf, "smith")
+    @patch("data_loader.load_data")
+    def test_case_sensitive(self, mock_load):
+        mock_load.return_value = self.lf
+        matched, _, _, count = m.precompute_author_data("smith")
         self.assertEqual(count, 0)
 
-    def test_partial_match(self):
-        matched, _, _, count = m.precompute_author_data(self.lf, "John")
+    @patch("data_loader.load_data")
+    def test_partial_match(self, mock_load):
+        mock_load.return_value = self.lf
+        matched, _, _, count = m.precompute_author_data("John")
         self.assertGreater(count, 0)
 
-    def test_rows_cache_structure(self):
-        _, _, rows, _ = m.precompute_author_data(self.lf, "Smith")
+    @patch("data_loader.load_data")
+    def test_rows_cache_structure(self, mock_load):
+        mock_load.return_value = self.lf
+        _, _, rows, _ = m.precompute_author_data("Smith")
         for paper_coauthors in rows:
             for name in paper_coauthors:
                 self.assertNotIn("Smith", name)
@@ -1390,6 +1407,57 @@ class TestRankAuthorMatches(unittest.TestCase):
         result = m._rank_author_matches(self.df, "Bob")
         self.assertEqual(len(result), 1)
         self.assertEqual(result["full_name"][0], "Bob Smith")
+
+
+# ---------------------------------------------------------------------------
+# AuthorFullNameExpr — null safety in list.eval
+# ---------------------------------------------------------------------------
+class TestAuthorFullNameExpr(unittest.TestCase):
+    def test_normal_name(self):
+        df = pl.DataFrame({"authors_parsed": [[["Smith", "John", ""]]]})
+        result = df.with_columns(
+            pl.col("authors_parsed").list.eval(m._author_full_name_expr()).alias("full")
+        ).to_dict(as_series=False)["full"][0][0]
+        self.assertEqual(result, "John Smith")
+
+    def test_missing_first_name(self):
+        df = pl.DataFrame({"authors_parsed": [[["Smith"]]]})
+        result = df.with_columns(
+            pl.col("authors_parsed").list.eval(m._author_full_name_expr()).alias("full")
+        ).to_dict(as_series=False)["full"][0][0]
+        self.assertEqual(result.strip(), "Smith")
+
+    def test_empty_entry(self):
+        df = pl.DataFrame({"authors_parsed": [[["", "", ""]]]})
+        result = df.with_columns(
+            pl.col("authors_parsed").list.eval(m._author_full_name_expr()).alias("full")
+        ).to_dict(as_series=False)["full"][0][0]
+        self.assertEqual(result.strip(), "")
+
+
+# ---------------------------------------------------------------------------
+# Center node marker — plotly_network_graph border properties
+# ---------------------------------------------------------------------------
+class TestCenterNodeMarker(unittest.TestCase):
+    def test_center_node_has_thick_border(self):
+        G = nx.Graph()
+        G.add_node("Center", type="center", papers=100, size=50)
+        G.add_node("Other", count=10)
+        G.add_edge("Center", "Other", weight=3)
+        fig = m.plotly_network_graph(G, node_color_map=lambda n, d: "#ff0")
+        marker = fig.data[-1].marker
+        self.assertEqual(marker.line.width[0], 3)
+        self.assertEqual(marker.line.width[1], 1)
+
+    def test_no_center_falls_back_to_default_border(self):
+        G = nx.Graph()
+        G.add_node("A", count=10)
+        G.add_node("B", count=20)
+        G.add_edge("A", "B", weight=1)
+        fig = m.plotly_network_graph(G)
+        marker = fig.data[-1].marker
+        for w in marker.line.width:
+            self.assertEqual(w, 1)
 
 
 if __name__ == "__main__":

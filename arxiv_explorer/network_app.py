@@ -13,9 +13,10 @@ import data_loader
 
 
 def _author_full_name_expr():
-    return (
-        pl.element().list.get(1).str.strip_chars() + " " + pl.element().list.get(0)
-    ).str.strip_chars()
+    e = pl.element()
+    last = e.list.get(0, null_on_oob=True).fill_null("")
+    first = e.list.get(1, null_on_oob=True).fill_null("")
+    return (first.str.strip_chars() + " " + last.str.strip_chars()).str.strip_chars()
 
 
 _CATEGORY_ALIASES = {
@@ -158,10 +159,11 @@ def build_category_graph(pc_df, cooc_df, top_n, min_cooc):
 
 
 @st.cache_data
-def precompute_author_data(_lf, author_name):
+def precompute_author_data(author_name):
+    lf = data_loader.load_data()
     papers = (
-        _lf.filter(pl.col("authors").str.contains(author_name, literal=True))
-        .select(pl.col("authors_parsed"))
+        lf.filter(pl.col("authors").str.contains(author_name, literal=True))
+        .select("authors", "authors_parsed")
         .collect()
     )
 
@@ -300,7 +302,18 @@ def plotly_network_graph(
         size = max(5, min(size, 80))
         node_size.append(size)
 
-    marker: dict[str, Any] = dict(size=node_size, line=dict(width=1, color="white"))
+    line_widths = [
+        3 if d.get("type") == "center" else 1
+        for _, d in G.nodes(data=True)
+    ]
+    line_colors = [
+        "#111" if d.get("type") == "center" else "white"
+        for _, d in G.nodes(data=True)
+    ]
+    marker: dict[str, Any] = dict(
+        size=node_size,
+        line=dict(width=line_widths, color=line_colors),
+    )
 
     if color_values is not None:
         marker["color"] = color_values
@@ -414,7 +427,10 @@ def plotly_network_graph(
 
 def _coa_cache_fig(G, center_node):
     coauthor_nodes = [n for n, d in G.nodes(data=True) if d.get("type") == "coauthor"]
-    weights = [G[n][center_node].get("weight", 1) for n in coauthor_nodes]
+    weights = []
+    for n in coauthor_nodes:
+        edge_data = G.get_edge_data(n, center_node) or {}
+        weights.append(edge_data.get("weight", 1))
     max_w = max(weights) if weights else 1
     fracs = [w / max_w for w in weights] if max_w > 0 else []
     coauthor_colors = px.colors.sample_colorscale("Sunsetdark", fracs) if fracs else []
@@ -497,7 +513,7 @@ def tab_category_network():
     fig = plotly_network_graph(ego, _ego_color)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     st.caption(
-        "Node size reflects paper count. The gold node is the selected research area."
+        "Node size reflects paper count. The gold node is the research area shown in the dropdown."
     )
 
     st.divider()
@@ -649,7 +665,13 @@ def tab_coauthor_network():
         name = name.strip()
         st.session_state.co_author_name = name
         with st.spinner(f"Searching for '{name}' in 1M papers…"):
-            md, cp, co, cpc = precompute_author_data(lf, name)
+            try:
+                md, cp, co, cpc = precompute_author_data(name)
+            except Exception as e:
+                st.error(f"Search failed: {e}")
+                st.session_state.pop("co_raw", None)
+                st.session_state.pop("co_graph", None)
+                return
             if cpc == 0:
                 st.error(f"No papers found for '{name}'. Try a different name.")
                 st.session_state.pop("co_raw", None)
@@ -681,7 +703,7 @@ def tab_coauthor_network():
             st.warning(f"No graph data for '{an}'. Try a new search.")
             st.session_state.pop("co_graph", None)
             st.rerun()
-        center_papers = G.nodes[an]["papers"]
+        center_papers = G.nodes[an].get("papers", 0)
 
         st.subheader(f"Collaboration Network: {an}")
 
@@ -1125,9 +1147,11 @@ def _render_authors(lf):
         display = filtered
         caption = f"Authors with ≥{min_papers} papers"
 
-    if display is not None:
+    if display is not None and len(display) > 0:
         st.caption(caption)
         max_p = display["papers"].max()
+        if max_p is None or max_p == 0:
+            max_p = 1
         df_viz = display.with_columns(
             (pl.col("papers") / max_p * 100).cast(pl.Int32).alias("pct")
         )
