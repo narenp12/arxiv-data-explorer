@@ -647,7 +647,14 @@ def tab_coauthor_network():
 # ---------------------------------------------------------------------------
 @st.cache_data
 def _author_stats(_lf):
-    n_authors = _lf.select(pl.col("authors_parsed").list.len().alias("n_authors")).collect()
+    # Handle case where authors_parsed might be stored as string (JSON) instead of list
+    authors_col = pl.col("authors_parsed")
+    # Try to use as list directly, if it fails, try to parse as JSON string
+    try:
+        n_authors = _lf.select(authors_col.list.len().alias("n_authors")).collect()
+    except Exception:
+        # If direct list operation fails, try parsing as JSON string
+        n_authors = _lf.select(authors_col.str.json_decode().list.len().alias("n_authors")).collect()
     return (
         int((n_authors["n_authors"] == 1).sum()),
         int((n_authors["n_authors"] >= 2).sum()),
