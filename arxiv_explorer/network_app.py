@@ -324,7 +324,7 @@ def tab_category_network():
     with c2:
         min_cooc = st.slider("Minimum co-occurrences to draw a connection", 1, 100, 5, key="cat_min")
     with c3:
-        build_btn = st.button("Update Network", type="primary", use_container_width=True)
+        build_btn = st.button("Update Network", type="primary", width='stretch')
 
     if build_btn or "cat_graph" not in st.session_state:
         with st.spinner("Building category network…"):
@@ -346,9 +346,12 @@ def tab_category_network():
         st.plotly_chart(st.session_state.cat_fig, width='stretch')
 
     with col2:
-        st.metric("Research areas", G.number_of_nodes())
-        st.metric("Connections", G.number_of_edges())
-        st.metric("Connectivity", f"{nx.density(G):.4f}")
+        st.metric("Research areas", G.number_of_nodes(),
+                   help="Number of distinct research area categories in the visible network")
+        st.metric("Connections", G.number_of_edges(),
+                   help="Number of co-occurrence connections between research areas")
+        st.metric("Connectivity", f"{nx.density(G):.4f}",
+                   help="Network density: fraction of possible connections that exist (0=disconnected, 1=fully connected)")
 
         st.subheader("Most Connected Areas")
         degrees = sorted(G.degree, key=lambda x: -x[1])[:10]
@@ -390,7 +393,7 @@ def tab_coauthor_network():
     with c2:
         max_co = st.slider("Maximum co-authors to show", 5, 150, 40, key="co_max")
     with c3:
-        search_btn = st.button("Find", type="primary", use_container_width=True)
+        search_btn = st.button("Find", type="primary", width='stretch')
 
     if author_name and author_name.strip():
         q = author_name.strip().lower()
@@ -450,10 +453,13 @@ def tab_coauthor_network():
             st.plotly_chart(st.session_state.co_fig, width='stretch')
 
         with col2:
-            st.metric("Papers by this author", f"{center_papers:,}")
-            st.metric("Co-authors found", G.number_of_nodes() - 1)
+            st.metric("Papers by this author", f"{center_papers:,}",
+                       help="Total number of papers in the dataset attributed to this author")
+            st.metric("Co-authors found", G.number_of_nodes() - 1,
+                       help="Number of distinct co-authors connected to this author")
             inter = G.number_of_edges() - (G.number_of_nodes() - 1)
-            st.metric("Collaborations between co-authors", inter)
+            st.metric("Collaborations between co-authors", inter,
+                       help="Number of co-author connections that exist between the author's collaborators (excluding direct links to the author)")
 
             if "matched_names" in st.session_state:
                 st.subheader("People matching your search")
@@ -490,10 +496,14 @@ def tab_network_stats():
         huge = (n_authors["n_authors"] >= 1000).sum()
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Single author", f"{solo:,}")
-        c2.metric("Multiple authors", f"{multi:,}")
-        c3.metric("100+ co-authors", f"{large:,}")
-        c4.metric("1000+ co-authors", f"{huge:,}")
+        c1.metric("Single author", f"{solo:,}",
+                   help="Papers with exactly one author")
+        c2.metric("Multiple authors", f"{multi:,}",
+                   help="Papers with two or more authors")
+        c3.metric("100+ co-authors", f"{large:,}",
+                   help="Papers listing 100 or more authors")
+        c4.metric("1000+ co-authors", f"{huge:,}",
+                   help="Papers listing 1000 or more authors")
 
         st.subheader("Authors with the Most Papers")
         author_counts = (
@@ -509,16 +519,20 @@ def tab_network_stats():
 
         st.dataframe(author_counts, width='stretch', hide_index=True,
                      column_config={
-                         "authors_parsed": "Last Name",
-                         "papers": st.column_config.NumberColumn("Papers", format="%d"),
-                         "relative": st.column_config.NumberColumn("vs #1", format="%d%%"),
+                         "authors_parsed": st.column_config.TextColumn("Last Name",
+                             help="Author's surname (last name) extracted from the parsed author list"),
+                         "papers": st.column_config.NumberColumn("Papers", format="%d",
+                             help=labels.COLUMN_HELP["papers"]),
+                         "relative": st.column_config.NumberColumn("vs #1", format="%d%%",
+                             help="Percentage of papers relative to the most prolific author"),
                      })
 
         st.subheader("Research Area Overlap")
         total = lf.select(pl.len()).collect().item()
         multi_cat_papers = lf.filter(pl.col("categories").str.split(" ").list.len() > 1).select(pl.len()).collect().item()
         st.metric("Papers spanning multiple research areas",
-                  f"{multi_cat_papers:,} ({multi_cat_papers / total * 100:.1f}% of all papers)")
+                   f"{multi_cat_papers:,} ({multi_cat_papers / total * 100:.1f}% of all papers)",
+                   help="Papers tagged with more than one arXiv category, indicating interdisciplinary research")
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +591,7 @@ def tab_drill_down():
 
     col_back, col_path = st.columns([1, 5])
     with col_back:
-        if st.session_state.drill_domain and st.button("⬆ Back", use_container_width=True):
+        if st.session_state.drill_domain and st.button("⬆ Back", width='stretch'):
             if st.session_state.drill_author:
                 st.session_state.drill_author = None
             elif st.session_state.drill_cat:
@@ -629,7 +643,7 @@ def _render_domains(pc):
                 )
                 st.caption(full)
                 st.markdown(f"**{papers:,}** papers · {subs} sub-categories")
-                if st.button("Explore →", key=f"dom_{domain}", use_container_width=True):
+                if st.button("Explore →", key=f"dom_{domain}", width='stretch'):
                     st.session_state.drill_domain = domain
                     st.rerun()
 
@@ -655,7 +669,7 @@ def _render_categories(pc):
                 )
                 st.caption(cat)
                 st.markdown(f"**{cnt:,}** papers")
-                if st.button("Browse →", key=f"cat_{cat}", use_container_width=True):
+                if st.button("Browse →", key=f"cat_{cat}", width='stretch'):
                     st.session_state.drill_cat = cat
                     st.rerun()
 
@@ -666,13 +680,20 @@ def _render_authors(lf):
     data = _category_authors(lf, cat)
     st.caption(f"{len(data)} unique authors")
 
-    search = st.text_input("Search for an author (last name)", key="drill_author_search")
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        search = st.text_input("Search for an author (last name)", key="drill_author_search")
+    with c2:
+        min_papers = st.number_input("Min papers", min_value=1, max_value=1000, value=1, key="drill_min_papers")
 
     if search:
         search_lc = search.strip().lower()
-        matches = data.filter(pl.col("authors_parsed").str.to_lowercase().str.contains(search_lc)).head(20)
+        matches = data.filter(
+            pl.col("authors_parsed").str.to_lowercase().str.contains(search_lc)
+            & (pl.col("papers") >= min_papers)
+        ).head(20)
         if len(matches) == 0:
-            st.warning(f"No authors matching '{search}'")
+            st.warning(f"No authors matching '{search}' with ≥{min_papers} papers")
         else:
             st.caption(f"Found {len(matches):,} author(s) matching '{search}'")
             max_p = matches["papers"].max()
@@ -682,12 +703,16 @@ def _render_authors(lf):
             ev = st.dataframe(
                 display,
                 column_config={
-                    "authors_parsed": "Author",
-                    "papers": st.column_config.NumberColumn("Papers", format="%d"),
-                    "pct": st.column_config.ProgressColumn("Activity", format="%d%%", min_value=0, max_value=100),
+                    "authors_parsed": st.column_config.TextColumn("Author",
+                        help="Author's surname (last name)"),
+                    "papers": st.column_config.NumberColumn("Papers", format="%d",
+                        help=labels.COLUMN_HELP["papers"]),
+                    "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
+                        min_value=0, max_value=100,
+                        help="Percentage of papers relative to the top author in this category"),
                 },
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 on_select="rerun",
                 selection_mode="single-row",
             )
@@ -696,21 +721,25 @@ def _render_authors(lf):
                 st.session_state.drill_author = display["authors_parsed"][idx]
                 st.rerun()
     else:
-        st.caption("Top 30 most prolific authors")
-        top = data.head(30)
-        max_p = top["papers"].max()
-        display = top.with_columns(
+        st.caption(f"Authors with ≥{min_papers} papers")
+        filtered = data.filter(pl.col("papers") >= min_papers)
+        max_p = filtered["papers"].max()
+        display = filtered.with_columns(
             (pl.col("papers") / max_p * 100).cast(pl.Int32).alias("pct")
         )
         ev = st.dataframe(
             display,
             column_config={
-                "authors_parsed": "Author",
-                "papers": st.column_config.NumberColumn("Papers", format="%d"),
-                "pct": st.column_config.ProgressColumn("Activity", format="%d%%", min_value=0, max_value=100),
+                "authors_parsed": st.column_config.TextColumn("Author",
+                    help="Author's surname (last name)"),
+                "papers": st.column_config.NumberColumn("Papers", format="%d",
+                    help=labels.COLUMN_HELP["papers"]),
+                "pct": st.column_config.ProgressColumn("% of Top", format="%d%%",
+                    min_value=0, max_value=100,
+                    help="Percentage of papers relative to the top author in this category"),
             },
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
             on_select="rerun",
             selection_mode="single-row",
         )

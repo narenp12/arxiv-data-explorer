@@ -205,3 +205,51 @@ def readable_column(col_name):
         "authors_parsed": "Authors (structured)",
     }
     return names.get(col_name, col_name.replace("-", " ").replace("_", " ").title())
+
+
+# ---------------------------------------------------------------------------
+# Column descriptions (sourced from data_dictionary.yaml for source columns)
+# ---------------------------------------------------------------------------
+COLUMN_HELP = {
+    # Source columns (from data_dictionary.yaml)
+    "id": "Unique ArXiv paper identifier",
+    "submitter": "Name of the person who submitted the paper to arXiv",
+    "authors": "Comma-separated list of author names as plain text",
+    "title": "Title of the paper",
+    "comments": "Free-form comments field often containing page/figure counts or additional notes from the submitter",
+    "journal-ref": "Journal reference for published papers",
+    "doi": "Digital Object Identifier for the published version",
+    "report-no": "Institutional report number assigned to the paper",
+    "categories": "Space-separated list of arXiv category tags (primary and cross-list categories)",
+    "license": "URL of the license under which the paper is distributed",
+    "abstract": "Full text abstract of the paper",
+    "versions": "Array of version records, each containing a version tag and creation timestamp",
+    "update_date": "Date of the most recent version update, in YYYY-MM-DD format",
+    "authors_parsed": "Parsed author names; each author is [last_name, first_names, suffix]",
+    # Derived / computed columns
+    "date": "Date of the most recent version update, parsed as a date",
+    "year": "Year of the most recent version update",
+    "month": "Month of the most recent version update (1–12)",
+    "month_name": "Abbreviated month name",
+    "n_cats": "Number of research categories assigned to a paper",
+    "label": "Human-readable name for an arXiv category code",
+    "categories_b": "Second research area in a co-occurrence pair",
+    "license_short": "Shortened human-readable license category",
+    "n_authors": "Number of authors listed on the paper",
+    "n_auth_binned": "Number of authors, capped at 51 for display",
+    "n_versions": "Number of versions (revisions) the paper has gone through",
+    "n_vers_binned": "Number of versions, capped at 21 for display",
+    "title_len": "Total characters in the paper title",
+    "abstract_len": "Total characters in the abstract",
+    "comments_len": "Total characters in the comments field",
+    "has_pages": "Whether the comments field includes a page count",
+    "has_figures": "Whether the comments field includes a figure count",
+    "has_refs": "Whether the comments field includes a reference count",
+    "domain": "Top-level arXiv domain (e.g. cs, math, physics)",
+    "pct": "Author's paper count as a percentage of the top author in this category",
+    "relative": "Author's paper count as a percentage of the most published author in the dataset",
+    "count": "Number of papers or occurrences in the current grouping",
+    "filled_pct": "Percentage of non-null (filled) values for this column",
+    "papers": "Number of papers associated with this author, category, or domain",
+    "subcategories": "Number of sub-categories within this domain",
+}

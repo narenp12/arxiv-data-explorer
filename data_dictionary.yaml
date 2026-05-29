@@ -8,6 +8,7 @@ dataset:
   format: Parquet
   total_rows: 1_000_000
   total_columns: 14
+  total_derived_columns: 25
   memory_usage_mb: 1617.58
 
 columns:
@@ -170,3 +171,142 @@ columns:
           description: Suffix (typically empty)
           example: ""
     example: "['de Leeuw', 'Marius', '']"
+
+derived_columns:
+
+  # Temporal
+  - name: date
+    type: date
+    description: Date of the most recent version update, parsed from update_date
+    used_in: Dashboard, Trends
+
+  - name: year
+    type: int32
+    description: Year extracted from update_date
+    used_in: Dashboard, Search filter, Trends
+
+  - name: month
+    type: int32
+    description: Month extracted from update_date (1–12)
+    used_in: Dashboard, Trends (heatmap)
+
+  - name: month_name
+    type: string
+    description: Abbreviated month name (e.g. Jan, Feb)
+    used_in: Dashboard, Trends
+
+  # Categories
+  - name: n_cats
+    type: uint32
+    description: Number of research categories assigned to a paper
+    used_in: Categories page
+
+  - name: label
+    type: string
+    description: Human-readable name for an arXiv category code, mapped via labels.CATEGORY_LABELS
+    used_in: Dashboard, Categories page
+
+  - name: domain
+    type: string
+    description: Top-level arXiv domain extracted from the first segment of a category code (e.g. cs, math, physics)
+    used_in: Network — Drill Down
+
+  - name: subcategories
+    type: uint32
+    description: Number of sub-categories within a domain
+    used_in: Network — Drill Down
+
+  - name: categories_b
+    type: string
+    description: Second research area in a co-occurrence pair (used in self-joins)
+    used_in: Network — Category Network (internal)
+
+  - name: license_short
+    type: string
+    description: Shortened human-readable license category (e.g. CC BY 4.0, arXiv nonexclusive)
+    used_in: Dashboard
+
+  # Authors
+  - name: n_authors
+    type: uint32
+    description: Number of authors listed on the paper
+    used_in: Authors page, Network — Stats
+
+  - name: n_auth_binned
+    type: uint32
+    description: Number of authors, capped at 51 for histogram display
+    used_in: Authors page
+
+  - name: papers
+    type: uint32
+    description: Number of papers associated with an author, category, or domain
+    used_in: Network — Stats, Drill Down
+
+  - name: pct
+    type: int32
+    description: Author's paper count as a percentage of the top author in the current category
+    used_in: Network — Drill Down (% of Top column)
+
+  - name: relative
+    type: int32
+    description: Author's paper count as a percentage of the most published author in the dataset
+    used_in: Network — Stats (vs #1 column)
+
+  # Text length
+  - name: title_len
+    type: uint32
+    description: Total characters in the paper title
+    used_in: Trends — Text tab
+
+  - name: abstract_len
+    type: uint32
+    description: Total characters in the abstract
+    used_in: Trends — Text tab
+
+  - name: comments_len
+    type: uint32
+    description: Total characters in the comments field
+    used_in: Trends — Comments tab
+
+  # Comments flags
+  - name: has_pages
+    type: bool
+    description: Whether the comments field includes a page count
+    used_in: Trends — Comments tab
+
+  - name: has_figures
+    type: bool
+    description: Whether the comments field includes a figure count
+    used_in: Trends — Comments tab
+
+  - name: has_refs
+    type: bool
+    description: Whether the comments field includes a reference count
+    used_in: Trends — Comments tab
+
+  # Versions
+  - name: n_versions
+    type: uint32
+    description: Number of versions (revisions) the paper has gone through
+    used_in: Trends — Versions tab
+
+  - name: n_vers_binned
+    type: uint32
+    description: Number of versions, capped at 21 for histogram display
+    used_in: Trends — Versions tab
+
+  # Aggregation
+  - name: count
+    type: uint32
+    description: Number of occurrences, papers, or items in the current grouping
+    used_in: All pages (aggregations)
+
+  - name: filled_pct
+    type: float64
+    description: Proportion of non-null values for a column (0.0–1.0)
+    used_in: Dashboard (data completeness chart)
+
+  - name: _row_idx
+    type: uint32
+    description: Internal row index for joining operations (not displayed)
+    used_in: Network — Category Network (internal)

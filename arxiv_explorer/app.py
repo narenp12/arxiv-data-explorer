@@ -137,10 +137,14 @@ def page_dashboard():
     n_authors = lf.select(pl.col("authors_parsed").list.eval(pl.element().list.first())).explode("authors_parsed").unique().len().collect().item()
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Papers", f"{total:,}")
-    col2.metric("Date Range", f"{date_df['date'].min().strftime('%Y-%m-%d')}  →  {date_df['date'].max().strftime('%Y-%m-%d')}")
-    col3.metric("Categories", f"{n_cats:,}")
-    col4.metric("Authors (unique last names)", f"{n_authors:,}")
+    col1.metric("Total Papers", f"{total:,}",
+                 help="Total number of papers in this 1M arXiv sample dataset")
+    col2.metric("Date Range", f"{date_df['date'].min().strftime('%Y-%m-%d')}  →  {date_df['date'].max().strftime('%Y-%m-%d')}",
+                 help="Earliest and most recent update dates across all papers in the dataset")
+    col3.metric("Categories", f"{n_cats:,}",
+                 help="Number of unique arXiv research area categories in the dataset")
+    col4.metric("Authors (unique last names)", f"{n_authors:,}",
+                 help="Number of unique author surnames in the dataset")
 
     c1, c2 = st.columns(2)
 
@@ -183,7 +187,7 @@ def page_dashboard():
         fig.update_traces(textinfo="label+percent")
         st.plotly_chart(fig, width='stretch')
 
-    st.subheader("Data Completeness")
+    st.subheader("Data Completeness", help="Proportion of non-null values for each column in the dataset")
     null_df = get_null_counts(lf)
     fig = px.bar(null_df, x="column", y="filled_pct", title="",
                  labels={"column": "", "filled_pct": "Non-null proportion"},
@@ -209,7 +213,7 @@ def page_search():
         year_max = int(year_range_series.max().item())
         year_range = st.slider("Year range", year_min, year_max, (year_min, year_max))
         author = st.text_input("Author", placeholder="e.g. de Leeuw")
-        search_btn = st.button("Search", type="primary", use_container_width=True)
+        search_btn = st.button("Search", type="primary", width='stretch')
 
     if "search_results" not in st.session_state:
         st.session_state.search_results = None
@@ -357,7 +361,8 @@ def page_authors():
         st.plotly_chart(fig, width='stretch')
 
     with st.spinner("Computing author distribution…"):
-        st.subheader("Authors per Paper Distribution")
+        st.subheader("Authors per Paper Distribution",
+                      help=labels.COLUMN_HELP["n_authors"])
         n_authors = lf.select(pl.col("authors_parsed").list.len().alias("n_authors")).collect()
         binned = (
             n_authors
@@ -416,7 +421,14 @@ def page_trends():
     with tab2:
         with st.spinner("Computing version statistics…"):
             version_stats = lf.select(pl.col("versions").list.len().alias("n_versions")).collect()
-            st.dataframe(version_stats.describe(), use_container_width=True)
+            st.dataframe(version_stats.describe(), width='stretch',
+                         column_config={
+                             "statistic": st.column_config.TextColumn("Statistic",
+                                 help="Statistical measure (count, mean, std, min, max, etc.)"),
+                             "n_versions": st.column_config.NumberColumn("Versions",
+                                 help=labels.COLUMN_HELP["n_versions"]),
+                         },
+                         )
 
             version_binned = (
                 version_stats
@@ -459,10 +471,15 @@ def page_trends():
                 pl.col("comments").str.contains(r"\d+\s*figures?", literal=False).alias("has_figures"),
                 pl.col("comments").str.contains(r"\d+\s*\w*\s*references?", literal=False).alias("has_refs"),
             ).collect()
+            st.subheader("Fields detected in comments",
+                          help="Counts of papers whose comments field mentions page counts, figure counts, or reference counts")
             c1, c2, c3 = st.columns(3)
-            c1.metric("With page count", f"{comments_df['has_pages'].sum():,}")
-            c2.metric("With figure count", f"{comments_df['has_figures'].sum():,}")
-            c3.metric("With ref count", f"{comments_df['has_refs'].sum():,}")
+            c1.metric("With page count", f"{comments_df['has_pages'].sum():,}",
+                       help=labels.COLUMN_HELP["has_pages"])
+            c2.metric("With figure count", f"{comments_df['has_figures'].sum():,}",
+                       help=labels.COLUMN_HELP["has_figures"])
+            c3.metric("With ref count", f"{comments_df['has_refs'].sum():,}",
+                       help=labels.COLUMN_HELP["has_refs"])
 
             fig = px.histogram(x=comments_df["comments_len"].drop_nulls().clip(upper_bound=300),
                                nbins=60, title="Comments Length Distribution",

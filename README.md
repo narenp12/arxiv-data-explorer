@@ -27,6 +27,8 @@ uv run pytest tests/ -v
 
 Expects `arxiv_random_sample.parquet` (1M papers) in the repo root. Schema includes `id`, `title`, `abstract`, `authors`, `authors_parsed`, `categories`, `update_date`, `license`, `comments`, `versions`, and more.
 
+A **[data dictionary](data_dictionary.yaml)** documents all 14 source columns and 25 derived columns with types, descriptions, and example values. Both apps surface these descriptions as live help tooltips on metrics, dataframes, and section headers — hover over any labeled element for explanation.
+
 ## Features
 
 - **Category aliasing** — 7 legacy→modern mappings (e.g. `math-ph` → `math.MP`)
@@ -35,3 +37,4 @@ Expects `arxiv_random_sample.parquet` (1M papers) in the repo root. Schema inclu
 - **Drill-down** — Domain → Category → Author → Papers with breadcrumb navigation
 - **Co-occurrence matrix** — overlap fraction between top research areas
 - **Networks stats** — per-paper author counts, most prolific authors, multi-area papers
+- **Live column help** — hover over any metric, dataframe header, or section heading for a description of what it represents (sourced from [data_dictionary.yaml](data_dictionary.yaml))
