@@ -23,6 +23,22 @@ _CATEGORY_ALIASES = {
     "comp-gas": "nlin.CG",
 }
 
+_DOMAIN_NAMES = {
+    "cs": "Computer Science",
+    "math": "Mathematics",
+    "stat": "Statistics",
+    "physics": "Physics",
+    "cond-mat": "Condensed Matter",
+    "astro-ph": "Astrophysics",
+    "eess": "Electrical Engineering & Systems Science",
+    "q-bio": "Quantitative Biology",
+    "q-fin": "Quantitative Finance",
+    "econ": "Economics",
+    "nlin": "Nonlinear Sciences",
+    "nucl": "Nuclear Physics",
+    "bayes-an": "Bayesian Analysis",
+}
+
 _SUBJECT_COLORS = {
     'cs': '#1f77b4',
     'math': '#ff7f0e',
@@ -317,10 +333,11 @@ def tab_category_network():
         build_btn = st.button("Update Network", type="primary", use_container_width=True)
 
     if build_btn or "cat_graph" not in st.session_state:
-        G = build_category_graph(paper_counts, cooc_counts, top_n, min_cooc)
-        st.session_state.cat_graph = G
-        st.session_state.cat_params = (top_n, min_cooc)
-        st.session_state.cat_fig = plotly_network_graph(G, _subject_color)
+        with st.spinner("Building category network…"):
+            G = build_category_graph(paper_counts, cooc_counts, top_n, min_cooc)
+            st.session_state.cat_graph = G
+            st.session_state.cat_params = (top_n, min_cooc)
+            st.session_state.cat_fig = plotly_network_graph(G, _subject_color)
         if build_btn:
             st.toast("Network updated", icon="✅")
     else:
@@ -350,22 +367,26 @@ def tab_category_network():
 # ---------------------------------------------------------------------------
 # Tab 2: Co-authorship Ego Network
 # ---------------------------------------------------------------------------
+@st.cache_data
+def _top_authors(_df):
+    return (
+        _df.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
+        .explode("authors_parsed")
+        .group_by("authors_parsed")
+        .agg(pl.len().alias("count"))
+        .sort("count", descending=True)
+        .head(20)
+    )
+
+
 def tab_coauthor_network():
     st.header("Collaboration Network")
     st.markdown("Search for an author and see who they have worked with. The bigger the circle, the more papers they have together.")
 
     df = load_data()
 
-    with st.spinner("Loading author index…"):
-        top_authors_df = (
-            df.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
-            .explode("authors_parsed")
-            .group_by("authors_parsed")
-            .agg(pl.len().alias("count"))
-            .sort("count", descending=True)
-            .head(20)
-        )
-        top_author_list = top_authors_df["authors_parsed"].to_list()
+    top_authors_df = _top_authors(df)
+    top_author_list = top_authors_df["authors_parsed"].to_list()
 
     c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
@@ -378,6 +399,16 @@ def tab_coauthor_network():
 
     st.markdown("**Popular last names:** " + " • ".join(top_author_list[:10]))
 
+    def _build_coa_graph(an, max_co):
+        md, cp, co, cpc = st.session_state.co_raw
+        with st.spinner("Building collaboration graph…"):
+            G, mn = build_author_ego_graph(an, md, cp, co, cpc, max_co)
+            if G is not None:
+                _coa_cache_fig(G, an)
+                st.session_state.co_graph = G
+                st.session_state.matched_names = mn
+                st.session_state.co_last_max_co = max_co
+
     if search_btn and author_name and author_name.strip():
         author_name = author_name.strip()
         st.session_state.author_name = author_name
@@ -389,27 +420,13 @@ def tab_coauthor_network():
                 st.session_state.pop("co_graph", None)
             else:
                 st.session_state.co_raw = (md, cp, co, cpc)
-                an = st.session_state.author_name
-                with st.spinner("Building collaboration graph…"):
-                    G, mn = build_author_ego_graph(an, md, cp, co, cpc, max_co)
-                    if G is not None:
-                        _coa_cache_fig(G, an)
-                        st.session_state.co_graph = G
-                        st.session_state.matched_names = mn
-                        st.session_state.co_last_max_co = max_co
+                _build_coa_graph(author_name, max_co)
 
     if st.session_state.get("co_raw") and st.session_state.get("author_name"):
         prev_co = st.session_state.get("co_last_max_co")
         if st.session_state.get("co_graph") is None or prev_co != max_co:
-            md, cp, co, cpc = st.session_state.co_raw
             an = st.session_state.author_name
-            with st.spinner("Updating collaboration graph…"):
-                G, mn = build_author_ego_graph(an, md, cp, co, cpc, max_co)
-                if G is not None:
-                    _coa_cache_fig(G, an)
-                    st.session_state.co_graph = G
-                    st.session_state.matched_names = mn
-            st.session_state.co_last_max_co = max_co
+            _build_coa_graph(an, max_co)
 
     if "co_graph" in st.session_state and st.session_state.co_graph is not None:
         G = st.session_state.co_graph
@@ -506,7 +523,7 @@ def _domain_counts(_pc):
     ).sort("papers", descending=True)
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Finding authors…")
 def _category_authors(_df, category):
     aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
     all_cats = [category] + aliases
@@ -524,7 +541,7 @@ def _category_authors(_df, category):
     )
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Loading papers…")
 def _author_papers(_df, category, author):
     aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
     all_cats = [category] + aliases
@@ -589,7 +606,8 @@ def _render_domains(pc):
     for i, (domain, papers, subs) in enumerate(data.iter_rows()):
         with cols[i % 4]:
             label = domain.replace("-", " ").title()
-            if st.button(f"{label}\n{papers:,} papers", key=f"dom_{domain}"):
+            full = _DOMAIN_NAMES.get(domain) or labels.readable_category(domain) or domain
+            if st.button(f"{label}\n{papers:,} papers", key=f"dom_{domain}", help=full):
                 st.session_state.drill_domain = domain
                 st.rerun()
 

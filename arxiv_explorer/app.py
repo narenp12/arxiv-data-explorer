@@ -24,7 +24,7 @@ def load_data():
     return pl.read_parquet(DATA)
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Preparing date columns…")
 def load_date_df():
     df = load_data()
     return df.with_columns(
@@ -34,7 +34,7 @@ def load_date_df():
     )
 
 
-@st.cache_data
+@st.cache_data(show_spinner="Counting papers per category…")
 def get_top_categories(_df, n=30):
     flat = _df.select(pl.col("categories").str.split(" ")).explode("categories")
     result = (
@@ -59,6 +59,16 @@ def get_month_counts(_df):
 
 
 @st.cache_data
+def get_null_counts(_df):
+    return (
+        _df.null_count()
+        .melt(value_name="null_count")
+        .with_columns((1 - pl.col("null_count") / len(_df)).alias("filled_pct"))
+        .sort("filled_pct")
+    )
+
+
+@st.cache_data(show_spinner="Counting licenses…")
 def get_license_counts(_df):
     lic = (
         _df.group_by("license")
@@ -156,12 +166,7 @@ def page_dashboard():
         st.plotly_chart(fig, width='stretch')
 
     st.subheader("Data Completeness")
-    null_df = (
-        df.null_count()
-        .melt(value_name="null_count")
-        .with_columns((1 - pl.col("null_count") / len(df)).alias("filled_pct"))
-        .sort("filled_pct")
-    )
+    null_df = get_null_counts(df)
     fig = px.bar(null_df, x="column", y="filled_pct", title="",
                  labels={"column": "", "filled_pct": "Non-null proportion"},
                  text_auto=".0%", height=400, color="filled_pct",
@@ -263,11 +268,12 @@ def page_categories():
     st.subheader("Related Research Areas")
     top10 = [c for c in top_cats["categories"][:10]]
     top10_labels = [labels.readable_category(c) for c in top10]
-    cat_matrix = df.select(*[pl.col("categories").str.contains(c, literal=True).cast(pl.Int32).alias(c) for c in top10])
-    cooc = cat_matrix.to_numpy().T @ cat_matrix.to_numpy()
-    totals = np.diag(cooc).copy()
-    cooc_norm = cooc / totals[:, np.newaxis].astype(float)
-    np.fill_diagonal(cooc_norm, np.nan)
+    with st.spinner("Computing category co-occurrence matrix…"):
+        cat_matrix = df.select(*[pl.col("categories").str.contains(c, literal=True).cast(pl.Int32).alias(c) for c in top10])
+        cooc = cat_matrix.to_numpy().T @ cat_matrix.to_numpy()
+        totals = np.diag(cooc).copy()
+        cooc_norm = cooc / totals[:, np.newaxis].astype(float)
+        np.fill_diagonal(cooc_norm, np.nan)
 
     short_names = [c.split(".")[-1] if "." in c else c for c in top10]
     fig = px.imshow(cooc_norm, x=short_names, y=short_names,
@@ -311,14 +317,15 @@ def page_authors():
                         st.markdown(f"**Abstract:** {row['abstract'][:400]}…")
     else:
         st.subheader("Most Prolific Authors (by last name)")
-        last_names = df.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
-        author_counts = (
-            last_names.explode("authors_parsed")
-            .group_by("authors_parsed")
-            .agg(pl.len().alias("count"))
-            .sort("count", descending=True)
-            .head(50)
-        )
+        with st.spinner("Counting papers per author…"):
+            last_names = df.select(pl.col("authors_parsed").list.eval(pl.element().list.first()))
+            author_counts = (
+                last_names.explode("authors_parsed")
+                .group_by("authors_parsed")
+                .agg(pl.len().alias("count"))
+                .sort("count", descending=True)
+                .head(50)
+            )
         fig = px.bar(author_counts.head(30), x="count", y="authors_parsed",
                      orientation="h", title="Top 30 Author Last Names",
                      labels={"count": "Papers", "authors_parsed": ""},
@@ -327,22 +334,23 @@ def page_authors():
         fig.update_layout(yaxis={"categoryorder": "total ascending"})
         st.plotly_chart(fig, width='stretch')
 
-    st.subheader("Authors per Paper Distribution")
-    n_authors = df.select(pl.col("authors_parsed").list.len().alias("n_authors"))
-    binned = (
-        n_authors
-        .with_columns(pl.when(pl.col("n_authors") > 50).then(51).otherwise(pl.col("n_authors")).alias("n_auth_binned"))
-        .group_by("n_auth_binned")
-        .agg(pl.len().alias("count"))
-        .sort("n_auth_binned")
-    )
-    labels = [str(i) for i in range(1, 51)] + ["51+"]
-    fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
-                        subplot_titles=("Authors per Paper (capped at 50)", "Zoom: 11+"))
-    fig.add_trace(go.Bar(x=labels, y=binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
-    fig.add_trace(go.Bar(x=labels[10:], y=binned["count"][10:], marker_color="#ef553b", showlegend=False), row=1, col=2)
-    fig.update_layout(title_text="Author Count Distribution", height=450)
-    st.plotly_chart(fig, width='stretch')
+    with st.spinner("Computing author distribution…"):
+        st.subheader("Authors per Paper Distribution")
+        n_authors = df.select(pl.col("authors_parsed").list.len().alias("n_authors"))
+        binned = (
+            n_authors
+            .with_columns(pl.when(pl.col("n_authors") > 50).then(51).otherwise(pl.col("n_authors")).alias("n_auth_binned"))
+            .group_by("n_auth_binned")
+            .agg(pl.len().alias("count"))
+            .sort("n_auth_binned")
+        )
+        labels = [str(i) for i in range(1, 51)] + ["51+"]
+        fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
+                            subplot_titles=("Authors per Paper (capped at 50)", "Zoom: 11+"))
+        fig.add_trace(go.Bar(x=labels, y=binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
+        fig.add_trace(go.Bar(x=labels[10:], y=binned["count"][10:], marker_color="#ef553b", showlegend=False), row=1, col=2)
+        fig.update_layout(title_text="Author Count Distribution", height=450)
+        st.plotly_chart(fig, width='stretch')
 
 
 def page_trends():
@@ -372,69 +380,73 @@ def page_trends():
         fig.update_traces(marker_color="#00cc96")
         st.plotly_chart(fig, width='stretch')
 
-        heatmap_data = date_df.filter(pl.col("year") >= 2010).group_by(["year", "month"]).agg(pl.len().alias("count")).sort(["year", "month"])
-        pivot = heatmap_data.pivot(values="count", index="year", on="month", aggregate_function="first")
-        month_map = {str(m): month_names[m - 1] for m in range(1, 13)}
-        z = pivot.select([pl.col(k).alias(v) for k, v in month_map.items()]).to_numpy()
-        fig = px.imshow(z, x=month_names, y=pivot["year"].to_list(),
-                        title="Activity Heatmap (Year × Month)",
-                        labels={"x": "Month", "y": "Year", "color": "Papers"},
-                        color_continuous_scale="blues", aspect="auto", height=600)
-        st.plotly_chart(fig, width='stretch')
+        with st.spinner("Computing activity heatmap…"):
+            heatmap_data = date_df.filter(pl.col("year") >= 2010).group_by(["year", "month"]).agg(pl.len().alias("count")).sort(["year", "month"])
+            pivot = heatmap_data.pivot(values="count", index="year", on="month", aggregate_function="first")
+            month_map = {str(m): month_names[m - 1] for m in range(1, 13)}
+            z = pivot.select([pl.col(k).alias(v) for k, v in month_map.items()]).to_numpy()
+            fig = px.imshow(z, x=month_names, y=pivot["year"].to_list(),
+                            title="Activity Heatmap (Year × Month)",
+                            labels={"x": "Month", "y": "Year", "color": "Papers"},
+                            color_continuous_scale="blues", aspect="auto", height=600)
+            st.plotly_chart(fig, width='stretch')
 
     with tab2:
-        version_stats = df.select(pl.col("versions").list.len().alias("n_versions"))
-        st.dataframe(version_stats.describe(), use_container_width=True)
+        with st.spinner("Computing version statistics…"):
+            version_stats = df.select(pl.col("versions").list.len().alias("n_versions"))
+            st.dataframe(version_stats.describe(), use_container_width=True)
 
-        version_binned = (
-            version_stats
-            .with_columns(pl.when(pl.col("n_versions") > 20).then(21).otherwise(pl.col("n_versions")).alias("n_vers_binned"))
-            .group_by("n_vers_binned")
-            .agg(pl.len().alias("count"))
-            .sort("n_vers_binned")
-        )
-        labels = [str(i) for i in range(1, 21)] + ["21+"]
-        fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
-                            subplot_titles=("Versions per Paper", "Zoom: 5+"))
-        fig.add_trace(go.Bar(x=labels, y=version_binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
-        fig.add_trace(go.Bar(x=labels[4:], y=version_binned["count"][4:], marker_color="#ef553b", showlegend=False), row=1, col=2)
-        fig.update_layout(title_text="Version Distribution", height=450)
-        st.plotly_chart(fig, width='stretch')
+            version_binned = (
+                version_stats
+                .with_columns(pl.when(pl.col("n_versions") > 20).then(21).otherwise(pl.col("n_versions")).alias("n_vers_binned"))
+                .group_by("n_vers_binned")
+                .agg(pl.len().alias("count"))
+                .sort("n_vers_binned")
+            )
+            labels = [str(i) for i in range(1, 21)] + ["21+"]
+            fig = make_subplots(rows=1, cols=2, column_widths=[0.7, 0.3],
+                                subplot_titles=("Versions per Paper", "Zoom: 5+"))
+            fig.add_trace(go.Bar(x=labels, y=version_binned["count"], marker_color="#636efa", showlegend=False), row=1, col=1)
+            fig.add_trace(go.Bar(x=labels[4:], y=version_binned["count"][4:], marker_color="#ef553b", showlegend=False), row=1, col=2)
+            fig.update_layout(title_text="Version Distribution", height=450)
+            st.plotly_chart(fig, width='stretch')
 
     with tab3:
-        text_df = df.select(pl.col("title").str.len_chars().alias("title_len"),
-                            pl.col("abstract").str.len_chars().alias("abstract_len"))
-        fig = make_subplots(rows=1, cols=2, subplot_titles=("Title Length", "Abstract Length"), shared_yaxes=True)
-        fig.add_trace(go.Histogram(x=text_df["title_len"], nbinsx=60, marker_color="#636efa", name="Title"), row=1, col=1)
-        fig.add_trace(go.Histogram(x=text_df["abstract_len"].clip(upper_bound=3000), nbinsx=80,
-                                   marker_color="#00cc96", name="Abstract"), row=1, col=2)
-        fig.update_layout(title_text="Text Length Distributions", height=450, showlegend=False)
-        st.plotly_chart(fig, width='stretch')
+        with st.spinner("Analyzing text length…"):
+            text_df = df.select(pl.col("title").str.len_chars().alias("title_len"),
+                                pl.col("abstract").str.len_chars().alias("abstract_len"))
+            fig = make_subplots(rows=1, cols=2, subplot_titles=("Title Length", "Abstract Length"), shared_yaxes=True)
+            fig.add_trace(go.Histogram(x=text_df["title_len"], nbinsx=60, marker_color="#636efa", name="Title"), row=1, col=1)
+            fig.add_trace(go.Histogram(x=text_df["abstract_len"].clip(upper_bound=3000), nbinsx=80,
+                                       marker_color="#00cc96", name="Abstract"), row=1, col=2)
+            fig.update_layout(title_text="Text Length Distributions", height=450, showlegend=False)
+            st.plotly_chart(fig, width='stretch')
 
-        sample_text = text_df.sample(n=10_000, seed=42)
-        fig = px.scatter(sample_text, x="title_len", y="abstract_len",
-                         title="Title vs Abstract Length (10k sample)",
-                         labels={"title_len": "Title (chars)", "abstract_len": "Abstract (chars)"},
-                         opacity=0.3, height=500)
-        st.plotly_chart(fig, width='stretch')
+            sample_text = text_df.sample(n=10_000, seed=42)
+            fig = px.scatter(sample_text, x="title_len", y="abstract_len",
+                             title="Title vs Abstract Length (10k sample)",
+                             labels={"title_len": "Title (chars)", "abstract_len": "Abstract (chars)"},
+                             opacity=0.3, height=500)
+            st.plotly_chart(fig, width='stretch')
 
     with tab4:
-        comments_df = df.select(
-            pl.col("comments").str.len_chars().alias("comments_len"),
-            pl.col("comments").str.contains(r"\d+\s*pages?", literal=False).alias("has_pages"),
-            pl.col("comments").str.contains(r"\d+\s*figures?", literal=False).alias("has_figures"),
-            pl.col("comments").str.contains(r"\d+\s*\w*\s*references?", literal=False).alias("has_refs"),
-        )
-        c1, c2, c3 = st.columns(3)
-        c1.metric("With page count", f"{comments_df['has_pages'].sum():,}")
-        c2.metric("With figure count", f"{comments_df['has_figures'].sum():,}")
-        c3.metric("With ref count", f"{comments_df['has_refs'].sum():,}")
+        with st.spinner("Parsing comments field…"):
+            comments_df = df.select(
+                pl.col("comments").str.len_chars().alias("comments_len"),
+                pl.col("comments").str.contains(r"\d+\s*pages?", literal=False).alias("has_pages"),
+                pl.col("comments").str.contains(r"\d+\s*figures?", literal=False).alias("has_figures"),
+                pl.col("comments").str.contains(r"\d+\s*\w*\s*references?", literal=False).alias("has_refs"),
+            )
+            c1, c2, c3 = st.columns(3)
+            c1.metric("With page count", f"{comments_df['has_pages'].sum():,}")
+            c2.metric("With figure count", f"{comments_df['has_figures'].sum():,}")
+            c3.metric("With ref count", f"{comments_df['has_refs'].sum():,}")
 
-        fig = px.histogram(x=comments_df["comments_len"].drop_nulls().clip(upper_bound=300),
-                           nbins=60, title="Comments Length Distribution",
-                           labels={"x": "Characters", "count": "Papers"}, height=400)
-        fig.update_traces(marker_color="#ab63fa")
-        st.plotly_chart(fig, width='stretch')
+            fig = px.histogram(x=comments_df["comments_len"].drop_nulls().clip(upper_bound=300),
+                               nbins=60, title="Comments Length Distribution",
+                               labels={"x": "Characters", "count": "Papers"}, height=400)
+            fig.update_traces(marker_color="#ab63fa")
+            st.plotly_chart(fig, width='stretch')
 
 
 # ---------------------------------------------------------------------------
