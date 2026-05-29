@@ -91,7 +91,9 @@ def _category_pattern(category):
 
 st.set_page_config(page_title="arXiv Network Explorer", page_icon=None, layout="wide")
 st.title("arXiv Network Explorer")
-st.markdown("Explore how research areas and authors are connected in 1M arXiv papers.")
+source = st.session_state.get("data_source", "local sample")
+paper_count = "2.99M" if source == "remote (HuggingFace)" else "1M"
+st.markdown(f"Explore how research areas and authors are connected in {paper_count} arXiv papers.")
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +555,7 @@ def tab_category_network():
                     key=f"cat_ego_{i}",
                     help=f"{w:,} co-occurrences, {cnt:,} papers — click to explore",
                 ):
-                    st.session_state._cat_ego_forward = f"{label} ({neighbor})"
+                    st.session_state._cat_ego_forward = neighbor
                     st.rerun()
             with cb:
                 st.markdown(f"**{w:,}** co-oc")
