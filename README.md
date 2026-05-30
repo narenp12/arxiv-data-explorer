@@ -80,11 +80,7 @@ Streamlit, Polars, NetworkX, Plotly, HuggingFace Hub.
 
 ## Deployment
 
-[Streamlit Community Cloud](https://share.streamlit.io):
-
-1. New app → select this repo
-2. Main file path: `arxiv_explorer/network_app.py`
-3. Auto-deploys on push to main branch
+Deployed at [arxivexplorer.streamlit.app](https://arxivexplorer.streamlit.app). Auto-deploys on push to main branch.
 
 ---
 
