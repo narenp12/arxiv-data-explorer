@@ -21,4 +21,6 @@ Streamlit, Polars, NetworkX, Plotly, HuggingFace Hub.
 
 ### Category aliases
 
+arXiv renamed some categories over time. The app maps legacy codes to their modern equivalents so they group correctly in graphs and statistics:
+
 `math-ph` → `math.MP`, `physics` → `physics.gen-ph`, `q-alg` → `math.QA`, `q-bio` → `q-bio.OT`, `q-fin` → `q-fin.GN`, `adap-org` → `nlin.AO`, `cmp-lg` → `cs.CL`.
