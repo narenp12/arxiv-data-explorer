@@ -8,7 +8,7 @@ Two apps for exploring 1M+ arXiv papers. The **Network Explorer** (`arxiv_explor
 
 - **Research Area Connections** — select a category to see its top co-occurring neighbors in a force-directed graph
 - **Collaboration Network** — search an author to see their weighted co-author ego-graph; click any co-author to explore their network
-- **Network Stats** — author count distribution, prolific authors, multi-category papers, searchable author list
+- **Network Stats** — author count distribution, prolific authors, multi-category paper statistics
 - **Drill-Down Explorer** — hierarchical drill-down: Domain → Category → Authors → Papers with breadcrumb navigation
 
 ### Data
