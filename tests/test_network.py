@@ -1210,6 +1210,35 @@ class TestDataSourceSwitching(unittest.TestCase):
         self.assertNotIn("_cat_ego_forward", data_loader.st.session_state)
         self.assertNotEqual(data_loader.st.session_state.get("cat_ego"), "math.AT")
 
+    def test_source_switch_clears_data_state_keys(self):
+        data_loader.render_sidebar_data_source()
+        for key in data_loader._DATA_STATE_KEYS:
+            data_loader.st.session_state[key] = f"stale_{key}"
+        data_loader.st.session_state.data_source = "remote (HuggingFace)"
+        data_loader.render_sidebar_data_source()
+        for key in data_loader._DATA_STATE_KEYS:
+            self.assertNotIn(
+                key,
+                data_loader.st.session_state,
+                f"{key} should be cleared on source switch",
+            )
+
+    def test_same_source_preserves_data_state_keys(self):
+        data_loader.render_sidebar_data_source()
+        data_loader.st.session_state.cat_graph = "existing_graph"
+        data_loader.render_sidebar_data_source()
+        self.assertIn("cat_graph", data_loader.st.session_state)
+        self.assertEqual(
+            data_loader.st.session_state.cat_graph, "existing_graph"
+        )
+
+    def test_non_data_state_keys_survive_switch(self):
+        data_loader.render_sidebar_data_source()
+        data_loader.st.session_state.data_source = "remote (HuggingFace)"
+        data_loader.render_sidebar_data_source()
+        self.assertIn("data_source", data_loader.st.session_state)
+        self.assertIn("_prev_data_source", data_loader.st.session_state)
+
     def test_cat_ego_forward_used_when_valid(self):
         G = nx.Graph()
         G.add_node("cs.AI", count=10)

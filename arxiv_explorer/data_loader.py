@@ -6,6 +6,32 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL_DATA = os.path.join(HERE, "..", "arxiv_random_sample.parquet")
 REMOTE_REPO = "open-index/open-arxiv"
 
+# Session-state keys that hold computed data derived from the current data source.
+# All are cleared when the user switches sources to prevent stale-state crashes.
+_DATA_STATE_KEYS = {
+    # Category network
+    "cat_graph",
+    "cat_ego",
+    "_cat_ego_forward",
+    # Coauthor network
+    "co_fig",
+    "co_graph",
+    "co_raw",
+    "co_author_name",
+    "matched_names",
+    "co_last_max_co",
+    "co_auto_search",
+    # Drill-down
+    "drill_domain",
+    "drill_cat",
+    "drill_authors",
+    "drill_paper",
+    # Search
+    "search_results",
+    "search_time",
+    "author_search_override",
+}
+
 
 def load_data() -> pl.LazyFrame:
     """Return a LazyFrame from the selected data source.
@@ -38,6 +64,8 @@ def render_sidebar_data_source():
         st.cache_data.clear()
         st.cache_resource.clear()
         st.session_state._data_reset = True
+        for key in _DATA_STATE_KEYS:
+            st.session_state.pop(key, None)
     st.session_state._prev_data_source = curr
     if curr == "remote (HuggingFace)":
         st.sidebar.caption(":cloud: 2.99M arXiv papers (HuggingFace)")
