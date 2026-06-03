@@ -1195,6 +1195,33 @@ class TestDataSourceSwitching(unittest.TestCase):
         data_loader.st.session_state.pop("_data_reset", False)
         self.assertFalse(data_loader.st.session_state.get("_data_reset", False))
 
+    def test_cat_ego_forward_skipped_when_stale_after_source_switch(self):
+        G = nx.Graph()
+        G.add_node("cs.AI", count=10)
+        G.add_node("stat.ML", count=5)
+        G.add_edge("cs.AI", "stat.ML", weight=3)
+        all_nodes = sorted(G.nodes(), key=lambda n: -G.degree(n))
+        data_loader.st.session_state._cat_ego_forward = "math.AT"
+        self.assertNotIn("math.AT", all_nodes)
+        if "_cat_ego_forward" in data_loader.st.session_state:
+            if data_loader.st.session_state._cat_ego_forward in G:
+                data_loader.st.session_state.cat_ego = data_loader.st.session_state._cat_ego_forward
+            del data_loader.st.session_state._cat_ego_forward
+        self.assertNotIn("_cat_ego_forward", data_loader.st.session_state)
+        self.assertNotEqual(data_loader.st.session_state.get("cat_ego"), "math.AT")
+
+    def test_cat_ego_forward_used_when_valid(self):
+        G = nx.Graph()
+        G.add_node("cs.AI", count=10)
+        G.add_node("stat.ML", count=5)
+        G.add_edge("cs.AI", "stat.ML", weight=3)
+        data_loader.st.session_state._cat_ego_forward = "stat.ML"
+        if "_cat_ego_forward" in data_loader.st.session_state:
+            if data_loader.st.session_state._cat_ego_forward in G:
+                data_loader.st.session_state.cat_ego = data_loader.st.session_state._cat_ego_forward
+            del data_loader.st.session_state._cat_ego_forward
+        self.assertEqual(data_loader.st.session_state.get("cat_ego"), "stat.ML")
+
 
 class TestCategoryPattern(unittest.TestCase):
     def test_basic_pattern(self):
@@ -1458,6 +1485,229 @@ class TestCenterNodeMarker(unittest.TestCase):
         marker = fig.data[-1].marker
         for w in marker.line.width:
             self.assertEqual(w, 1)
+
+
+class TestAuthorStatsJsonFallback(unittest.TestCase):
+    """_author_stats should handle authors_parsed stored as JSON string."""
+
+    def test_json_string_parsed_correctly(self):
+        lf = pl.DataFrame(
+            {
+                "authors_parsed": [
+                    '[["Smith", "John", ""]]',
+                    '[["Doe", "Jane", ""], ["Brown", "Bob", ""]]',
+                ],
+            }
+        ).lazy()
+        solo, multi, _, _ = m._author_stats(lf)
+        self.assertEqual(solo, 1)
+        self.assertEqual(multi, 1)
+
+    def test_json_string_empty(self):
+        lf = pl.DataFrame(
+            {
+                "authors_parsed": pl.Series([], dtype=pl.Utf8),
+            }
+        ).lazy()
+        solo, multi, large, huge = m._author_stats(lf)
+        self.assertEqual(solo, 0)
+        self.assertEqual(multi, 0)
+        self.assertEqual(large, 0)
+        self.assertEqual(huge, 0)
+
+    def test_json_string_single_list(self):
+        lf = pl.DataFrame(
+            {
+                "authors_parsed": [
+                    '[["Smith", "John", ""]]',
+                ],
+            }
+        ).lazy()
+        solo, multi, _, _ = m._author_stats(lf)
+        self.assertEqual(solo, 1)
+        self.assertEqual(multi, 0)
+
+    def test_json_string_many_authors(self):
+        import json
+        lf = pl.DataFrame(
+            {
+                "authors_parsed": [
+                    json.dumps([["A"]] * 200),
+                ],
+            }
+        ).lazy()
+        solo, multi, large, huge = m._author_stats(lf)
+        self.assertEqual(solo, 0)
+        self.assertEqual(multi, 1)
+        self.assertEqual(large, 1)
+        self.assertEqual(huge, 0)
+
+
+class TestCategoryPatternSpecialChars(unittest.TestCase):
+    """_category_pattern should handle regex special chars."""
+
+    def test_dot_in_code(self):
+        pattern = m._category_pattern("cs.AI")
+        self.assertIsNotNone(re.search(pattern, " cs.AI "))
+        self.assertIsNone(re.search(pattern, "csXAI"))
+
+    def test_plus_in_code(self):
+        pattern = m._category_pattern("cs+AI")
+        self.assertTrue(pattern)
+        self.assertIsNotNone(re.search(pattern, " cs+AI "))
+
+    def test_parens_in_code(self):
+        pattern = m._category_pattern("stat.ML")
+        self.assertIsNotNone(re.search(pattern, " stat.ML "))
+
+    def test_alternation_with_alias(self):
+        pattern = m._category_pattern("math.MP")
+        # Should match the target and its alias
+        self.assertIsNotNone(re.search(pattern, " math.MP "))
+        self.assertIsNotNone(re.search(pattern, " math-ph "))
+
+
+class TestAuthorPapersMultiEdgeCases(unittest.TestCase):
+    """_author_papers_multi edge cases."""
+
+    def setUp(self):
+        self.lf = pl.LazyFrame(
+            {
+                "id": ["1", "2", "3"],
+                "title": ["A", "B", "C"],
+                "abstract": ["abs1", "abs2", "abs3"],
+                "authors": ["Smith, John", "Doe, Jane", "Brown, Bob"],
+                "categories": ["cs.AI", "cs.AI stat.ML", "math.AT"],
+                "authors_parsed": [
+                    [["Smith", "John", ""]],
+                    [["Doe", "Jane", ""]],
+                    [["Brown", "Bob", ""]],
+                ],
+                "update_date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            }
+        )
+
+    def test_no_papers_match(self):
+        result = m._author_papers_multi(self.lf, "cs.AI", ("NonExistent",))
+        self.assertEqual(len(result), 0)
+
+    def test_single_author_matches(self):
+        result = m._author_papers_multi(self.lf, "cs.AI", ("Smith",))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["id"][0], "1")
+
+    def test_multiple_authors_must_all_match(self):
+        result = m._author_papers_multi(self.lf, "cs.AI", ("Smith", "Doe"))
+        self.assertEqual(len(result), 0)
+
+    def test_empty_authors_list(self):
+        result = m._author_papers_multi(self.lf, "cs.AI", ())
+        self.assertEqual(len(result), 2)
+
+
+class TestPlotlyDrawEdgesFalse(unittest.TestCase):
+    def test_no_edge_traces_when_draw_edges_false(self):
+        G = nx.Graph()
+        G.add_node("A", count=10)
+        G.add_node("B", count=5)
+        G.add_edge("A", "B", weight=1)
+        fig = m.plotly_network_graph(G, draw_edges=False)
+        edge_traces = [t for t in fig.data if t.mode == "lines"]
+        self.assertEqual(len(edge_traces), 0)
+        node_traces = [t for t in fig.data if t.mode == "markers"]
+        self.assertEqual(len(node_traces), 1)
+
+    def test_empty_graph_no_error(self):
+        G = nx.Graph()
+        fig = m.plotly_network_graph(G, draw_edges=False)
+        self.assertIsInstance(fig, go.Figure)
+        self.assertEqual(len(fig.data), 1)
+
+
+class TestPrecomputeCategoryDataNullCategories(unittest.TestCase):
+    """precompute_category_data should handle null/empty categories."""
+
+    def test_null_category_creates_no_cooc(self):
+        lf = pl.DataFrame(
+            {
+                "categories": [None, "cs.AI"],
+            }
+        ).lazy()
+        pc, cooc = m.precompute_category_data(lf)
+        self.assertIn(None, pc["categories"].to_list())
+        self.assertEqual(len(cooc), 0)
+
+    def test_empty_string_category_does_not_crash(self):
+        lf = pl.DataFrame(
+            {
+                "categories": ["", "cs.AI"],
+            }
+        ).lazy()
+        pc, _ = m.precompute_category_data(lf)
+        cats = pc["categories"].to_list()
+        self.assertIn("cs.AI", cats)
+
+
+class TestOverlapStatsEmptyData(unittest.TestCase):
+    def test_empty_categories_no_error(self):
+        lf = pl.DataFrame(
+            {
+                "categories": pl.Series([], dtype=pl.Utf8),
+            }
+        ).lazy()
+        total, multi_cat = m._overlap_stats(lf)
+        self.assertEqual(total, 0)
+        self.assertEqual(multi_cat, 0)
+
+    def test_single_cat_no_multi(self):
+        lf = pl.DataFrame(
+            {
+                "categories": ["cs.AI"],
+            }
+        ).lazy()
+        total, multi_cat = m._overlap_stats(lf)
+        self.assertEqual(total, 1)
+        self.assertEqual(multi_cat, 0)
+
+
+class TestBuildCategoryGraphMoreEdgeCases(unittest.TestCase):
+    def setUp(self):
+        self.build = m.build_category_graph
+
+    def test_top_n_less_than_available(self):
+        pc = pl.DataFrame(
+            {
+                "categories": ["cs.AI", "math.AT", "stat.ML"],
+                "count": [100, 80, 60],
+            }
+        )
+        cooc = pl.DataFrame(
+            {
+                "categories": ["cs.AI", "cs.AI"],
+                "categories_b": ["math.AT", "stat.ML"],
+                "count": [30, 15],
+            }
+        )
+        G = self.build(pc, cooc, top_n=2, min_cooc=1)
+        self.assertEqual(G.number_of_nodes(), 2)
+        self.assertEqual(G.number_of_edges(), 1)
+
+    def test_top_n_zero_returns_empty(self):
+        pc = pl.DataFrame(
+            {
+                "categories": ["cs.AI"],
+                "count": [100],
+            }
+        )
+        cooc = pl.DataFrame(
+            {
+                "categories": pl.Series([], dtype=pl.Utf8),
+                "categories_b": pl.Series([], dtype=pl.Utf8),
+                "count": pl.Series([], dtype=pl.Int64),
+            }
+        )
+        G = self.build(pc, cooc, top_n=0, min_cooc=1)
+        self.assertEqual(G.number_of_nodes(), 0)
 
 
 if __name__ == "__main__":

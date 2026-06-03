@@ -12,6 +12,12 @@ class MockSessionState(dict):
     def __setattr__(self, name, value):
         self[name] = value
 
+    def __delattr__(self, name):
+        try:
+            dict.__delitem__(self, name)
+        except KeyError:
+            raise AttributeError(name)
+
 
 class CacheMock:
     """Mocks both @st.cache_data / @st.cache_resource decorators and .clear()."""

@@ -491,7 +491,8 @@ def tab_category_network():
 
     all_nodes = sorted(G.nodes(), key=lambda n: -G.degree(n))
     if "_cat_ego_forward" in st.session_state:
-        st.session_state.cat_ego = st.session_state._cat_ego_forward
+        if st.session_state._cat_ego_forward in G:
+            st.session_state.cat_ego = st.session_state._cat_ego_forward
         del st.session_state._cat_ego_forward
     selected_node = st.selectbox(
         "Choose a research area to explore",
@@ -791,6 +792,8 @@ def tab_coauthor_network():
                     f"Found {len(matches):,} matching author(s) (showing up to 500)"
                 )
                 max_p = matches["count"].max()
+                if max_p is None or max_p == 0:
+                    max_p = 1
                 display = matches.with_columns(
                     (pl.col("count") / max_p * 100).cast(pl.Int32).alias("pct")
                 )
@@ -839,7 +842,7 @@ def _author_stats(_lf):
     _list_t = pl.List(pl.List(pl.Utf8))
     try:
         n_authors = _lf.select(authors_col.list.len().alias("n_authors")).collect()
-    except Exception:
+    except pl.exceptions.InvalidOperationError:
         n_authors = _lf.select(
             authors_col.str.json_decode(_list_t).list.len().alias("n_authors")
         ).collect()
