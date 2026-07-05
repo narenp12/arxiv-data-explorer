@@ -1,5 +1,5 @@
 [project]
-name = "bayesian-causal-learning"
+name = "arxiv-data-explorer"
 version = "0.1.0"
 description = "Interactive arXiv paper explorer with category networks, author collaboration graphs, and drill-down analytics"
 readme = "README.md"

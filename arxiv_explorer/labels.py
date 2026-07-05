@@ -1,3 +1,5 @@
+import re
+
 CATEGORY_LABELS = {
     "cs.AI": "Computer Science - Artificial Intelligence",
     "cs.AR": "Computer Science - Architecture",
@@ -260,5 +262,24 @@ COLUMN_HELP = {
 }
 
 
+CATEGORY_ALIASES = {
+    "math-ph": "math.MP",
+    "chao-dyn": "nlin.CD",
+    "solv-int": "nlin.SI",
+    "cmp-lg": "cs.CL",
+    "patt-sol": "nlin.PS",
+    "dg-ga": "math.DG",
+    "comp-gas": "nlin.CG",
+}
+
+
+def category_pattern(category):
+    """Build a regex pattern matching a category and its aliases at word boundaries."""
+    aliases = [k for k, v in CATEGORY_ALIASES.items() if v == category]
+    all_cats = [category] + aliases
+    return r"(?:^|\s)(?:" + "|".join(re.escape(c) for c in all_cats) + r")(?:\s|$)"
+
+
 def strip_latex(text: str) -> str:
+    """Null-coalescing placeholder; does not actually strip LaTeX markup."""
     return text or ""

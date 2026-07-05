@@ -10,6 +10,8 @@ import time
 import labels
 import data_loader
 
+MAX_SEARCH_RESULTS = 5_000
+
 _MONTH_NAMES = [
     "Jan",
     "Feb",
@@ -67,7 +69,8 @@ st.set_page_config(page_title="arXiv Explorer", page_icon=None, layout="wide")
 @st.cache_data(show_spinner="Preparing date columns…")
 def load_date_df(_lf):
     return (
-        _lf.with_columns(
+        _lf.select("update_date")
+        .with_columns(
             pl.col("update_date").str.to_date("%Y-%m-%d", strict=False).alias("date"),
         )
         .with_columns(
@@ -83,6 +86,13 @@ def get_top_categories(_lf, n=30):
     return (
         _lf.select(pl.col("categories").str.split(" "))
         .explode("categories")
+        .with_columns(
+            pl.col("categories").replace_strict(
+                list(labels.CATEGORY_ALIASES.keys()),
+                list(labels.CATEGORY_ALIASES.values()),
+                default=pl.col("categories"),
+            ).alias("categories")
+        )
         .group_by("categories")
         .agg(pl.len().alias("count"))
         .sort("count", descending=True)
@@ -225,7 +235,7 @@ def search_papers(_lf, query, category, year_range, author):
             result = result.filter(cond)
     if category and category != "All":
         result = result.filter(
-            pl.col("categories").str.contains(category, literal=True)
+            pl.col("categories").str.contains(labels.category_pattern(category))
         )
     if year_range:
         result = result.filter(
@@ -236,7 +246,7 @@ def search_papers(_lf, query, category, year_range, author):
         )
     if author:
         result = result.filter(pl.col("authors").str.contains(author, literal=True))
-    return result.collect()
+    return result.head(MAX_SEARCH_RESULTS + 1).collect()
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +269,7 @@ def page_dashboard():
     col1.metric(
         "Total Papers",
         f"{total:,}",
-        help="Total number of papers in this 1M arXiv sample dataset",
+        help="Total number of papers in the selected dataset",
     )
     col2.metric(
         "Date Range",
@@ -336,7 +346,7 @@ def page_dashboard():
         color_continuous_scale="blues",
     )
     fig.update_traces(textposition="outside")
-    fig.update_yaxis(tickformat=".0%", range=[0, 1.15])
+    fig.update_yaxes(tickformat=".0%", range=[0, 1.15])
     st.plotly_chart(fig, width="stretch")
 
 
@@ -381,9 +391,17 @@ def page_search():
                 st.session_state.search_time = time.time() - t0
 
         results = st.session_state.search_results
+        truncated = len(results) > MAX_SEARCH_RESULTS
+        count_display = f"{MAX_SEARCH_RESULTS:,}+" if truncated else f"{len(results):,}"
         st.info(
-            f"Found **{len(results):,}** papers in {st.session_state.search_time:.2f}s"
+            f"Found **{count_display}** papers in {st.session_state.search_time:.2f}s"
         )
+        if truncated:
+            st.warning(
+                f"Showing first {MAX_SEARCH_RESULTS:,} results. Refine your search "
+                "to see more precise results."
+            )
+        results = results.head(MAX_SEARCH_RESULTS) if truncated else results
 
         if len(results) > 0:
             per_page = st.selectbox("Results per page", [25, 50, 100], index=0)
@@ -393,7 +411,7 @@ def page_search():
             page_df = results.slice(start, end - start)
 
             for row in page_df.iter_rows(named=True):
-                with st.expander(f"{row['id']} — {row['title'][:120]}"):
+                with st.expander(f"{row['id']} — {(row['title'] or '')[:120]}"):
                     cols = st.columns([3, 1])
                     with cols[0]:
                         st.markdown(f"**Authors:** {row['authors']}")
@@ -416,10 +434,11 @@ def page_search():
                         st.metric("Versions", n_vers)
                         st.metric("Authors", n_auth)
                     st.markdown("---")
+                    ab = row.get("abstract") or ""
                     st.markdown(
-                        f"**Abstract:** {labels.strip_latex(row['abstract'][:500])}…"
-                        if len(row.get("abstract", "")) > 500
-                        else f"**Abstract:** {labels.strip_latex(row.get('abstract', ''))}"
+                        f"**Abstract:** {labels.strip_latex(ab[:500])}…"
+                        if len(ab) > 500
+                        else f"**Abstract:** {labels.strip_latex(ab)}"
                     )
 
 
@@ -436,7 +455,10 @@ def _cat_counts_histogram(_lf):
 def _cooccurrence_matrix(_lf, top_categories):
     cat_matrix = _lf.select(
         *[
-            pl.col("categories").str.contains(c, literal=True).cast(pl.Int32).alias(c)
+            pl.col("categories")
+            .str.contains(labels.category_pattern(c))
+            .cast(pl.Int32)
+            .alias(c)
             for c in top_categories
         ]
     ).collect()
@@ -450,7 +472,7 @@ def _cooccurrence_matrix(_lf, top_categories):
 @st.cache_data
 def _browse_count(_lf, category):
     return (
-        _lf.filter(pl.col("categories").str.contains(category, literal=True))
+        _lf.filter(pl.col("categories").str.contains(labels.category_pattern(category)))
         .select(pl.len())
         .collect()
         .item()
@@ -460,7 +482,7 @@ def _browse_count(_lf, category):
 @st.cache_data
 def _browse_papers(_lf, category):
     return (
-        _lf.filter(pl.col("categories").str.contains(category, literal=True))
+        _lf.filter(pl.col("categories").str.contains(labels.category_pattern(category)))
         .select("id", "title")
         .collect()
     )
@@ -576,13 +598,14 @@ def page_authors():
                 )
             with st.spinner("Loading paper details…"):
                 for row in display.iter_rows(named=True):
-                    with st.expander(f"{row['id']} — {row['title'][:120]}"):
+                    with st.expander(f"{row['id']} — {(row['title'] or '')[:120]}"):
                         st.markdown(f"**Authors:** {row['authors']}")
                         st.markdown(
                             f"**Categories:** {labels.readable_categories(row['categories'])}"
                         )
+                        ab = row.get("abstract") or ""
                         st.markdown(
-                            f"**Abstract:** {labels.strip_latex(row['abstract'][:400])}…"
+                            f"**Abstract:** {labels.strip_latex(ab[:400])}…"
                         )
     else:
         st.subheader("Most Prolific Authors (by last name)")
@@ -690,12 +713,15 @@ def page_trends():
                 values="count", index="year", on="month", aggregate_function="first"
             )
             month_map = {str(m): _MONTH_NAMES[m - 1] for m in range(1, 13)}
+            present_months = {
+                k: v for k, v in month_map.items() if k in pivot.columns
+            }
             z = pivot.select(
-                [pl.col(k).alias(v) for k, v in month_map.items()]
+                [pl.col(k).alias(v) for k, v in present_months.items()]
             ).to_numpy()
             fig = px.imshow(
                 z,
-                x=_MONTH_NAMES,
+                x=list(present_months.values()),
                 y=pivot["year"].to_list(),
                 title="Activity Heatmap (Year × Month)",
                 labels={"x": "Month", "y": "Year", "color": "Papers"},
@@ -797,7 +823,7 @@ def page_trends():
             )
             st.plotly_chart(fig, width="stretch")
 
-            sample_text = text_df.sample(n=10_000, seed=42)
+            sample_text = text_df.sample(n=min(10_000, len(text_df)), seed=42)
             fig = px.scatter(
                 sample_text,
                 x="title_len",

@@ -33,14 +33,27 @@ _DATA_STATE_KEYS = {
 }
 
 
+def _is_lfs_pointer(path) -> bool:
+    """Return True if the file at path is an un-downloaded git-LFS pointer."""
+    with open(path, "rb") as f:
+        head = f.read(40)
+    return head.startswith(b"version https://git-lfs")
+
+
 def load_data() -> pl.LazyFrame:
     """Return a LazyFrame from the selected data source.
     Not cached (just a file-open), but _load_remote is cached."""
     source = st.session_state.get("data_source", "local sample")
     if source == "local sample":
         if os.path.exists(LOCAL_DATA):
-            return pl.scan_parquet(LOCAL_DATA)
-        st.info("Local sample not found, loading from HuggingFace…")
+            if _is_lfs_pointer(LOCAL_DATA):
+                st.info(
+                    "Local sample is a git-LFS pointer (not downloaded); loading from HuggingFace…"
+                )
+            else:
+                return pl.scan_parquet(LOCAL_DATA)
+        else:
+            st.info("Local sample not found, loading from HuggingFace…")
     return _load_remote()
 
 

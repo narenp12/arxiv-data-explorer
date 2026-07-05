@@ -5,7 +5,7 @@ import networkx as nx
 import plotly.graph_objects as go
 import plotly.express as px
 from itertools import combinations
-import re
+import html
 from typing import Any
 
 import labels
@@ -19,15 +19,8 @@ def _author_full_name_expr():
     return (first.str.strip_chars() + " " + last.str.strip_chars()).str.strip_chars()
 
 
-_CATEGORY_ALIASES = {
-    "math-ph": "math.MP",
-    "chao-dyn": "nlin.CD",
-    "solv-int": "nlin.SI",
-    "cmp-lg": "cs.CL",
-    "patt-sol": "nlin.PS",
-    "dg-ga": "math.DG",
-    "comp-gas": "nlin.CG",
-}
+_CATEGORY_ALIASES = labels.CATEGORY_ALIASES
+_category_pattern = labels.category_pattern
 
 _DOMAIN_NAMES = {
     "cs": "Computer Science",
@@ -80,13 +73,6 @@ def _subject_color(node, data):
     for c in raw:
         h = (h * 31 + ord(c)) & 0xFFFFFFFF
     return _EXTRA_PALETTE[h % len(_EXTRA_PALETTE)]
-
-
-def _category_pattern(category):
-    """Build a regex pattern matching a category and its aliases at word boundaries."""
-    aliases = [k for k, v in _CATEGORY_ALIASES.items() if v == category]
-    all_cats = [category] + aliases
-    return r"(?:^|\s)(?:" + "|".join(re.escape(c) for c in all_cats) + r")(?:\s|$)"
 
 
 st.set_page_config(page_title="arXiv Network Explorer", page_icon=None, layout="wide")
@@ -1074,7 +1060,7 @@ def _render_domains(pc):
             with st.container(border=True):
                 st.html(
                     f"<div style='border-left:4px solid {color};padding-left:8px'>"
-                    f"<strong>{label}</strong></div>"
+                    f"<strong>{html.escape(label)}</strong></div>"
                 )
                 st.caption(full)
                 st.markdown(f"**{papers:,}** papers · {subs} sub-categories")
@@ -1099,7 +1085,7 @@ def _render_categories(pc):
             with st.container(border=True):
                 st.html(
                     f"<div style='border-left:4px solid {color};padding-left:8px'>"
-                    f"<strong>{label}</strong></div>"
+                    f"<strong>{html.escape(label)}</strong></div>"
                 )
                 st.caption(cat)
                 st.markdown(f"**{cnt:,}** papers")
