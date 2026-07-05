@@ -6,18 +6,26 @@ const RATE_LIMIT_MS = 110;
 let lastRequest = 0;
 let requestQueue: Promise<void> = Promise.resolve();
 
-async function rateLimitedFetch(url: string): Promise<Response> {
-	const prev = requestQueue;
-	let resolveNext: () => void;
-	requestQueue = new Promise((r) => { resolveNext = r; });
-	await prev;
-	const now = Date.now();
-	const wait = Math.max(0, RATE_LIMIT_MS - (now - lastRequest));
-	if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-	lastRequest = Date.now();
-	const res = fetch(url);
-	res.finally(() => resolveNext!());
-	return res;
+async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
+	for (let attempt = 0; ; attempt++) {
+		const prev = requestQueue;
+		let resolveNext: () => void;
+		requestQueue = new Promise((r) => { resolveNext = r; });
+		await prev;
+		const now = Date.now();
+		const wait = Math.max(0, RATE_LIMIT_MS - (now - lastRequest));
+		if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+		lastRequest = Date.now();
+		let res: Response;
+		try {
+			res = await fetch(url);
+		} finally {
+			resolveNext!();
+		}
+		if (res.status !== 429 || attempt >= retries) return res;
+		const retryAfter = parseInt(res.headers.get("Retry-After") ?? "1", 10);
+		await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 5000)));
+	}
 }
 
 function openalexIdFromUrl(url: string): string {
@@ -44,13 +52,17 @@ export async function fetchConcepts(doi: string | null, arxivId: string | null):
 	}));
 }
 
-export interface OpenAlexWork {
-	id: string;
-	title: string;
-	authors: { name: string; authorId: string }[];
-	publicationYear: number | null;
-	doi: string | null;
-	citedByCount: number;
+function normalizeOpenAlexId(id: string): string {
+	if (/^(doi|arxiv|pmid|pmcid):/i.test(id)) return id;
+	if (id.includes("/")) return `doi:${id}`;
+	if (/^\d{4}\.\d{4,5}$/.test(id)) return `arXiv:${id}`;
+	return id;
+}
+
+function arxivIdFromDoi(doi: string | null): string | null {
+	if (!doi) return null;
+	const m = doi.match(/^10\.48550\/arXiv\.(.+)$/i);
+	return m ? m[1] : null;
 }
 
 function parseWork(d: Record<string, unknown>): WorkSummary {
@@ -67,7 +79,7 @@ function parseWork(d: Record<string, unknown>): WorkSummary {
 		publicationYear: (d as { publication_year?: number | null }).publication_year ?? null,
 		doi: doi ? doi.replace(/^https?:\/\/doi\.org\//, "") : null,
 		citedByCount: (d as { cited_by_count?: number }).cited_by_count ?? 0,
-		arxivId: null,
+		arxivId: arxivIdFromDoi(doi),
 		openalexUrl: `https://openalex.org/${id}`,
 	};
 }
@@ -116,8 +128,9 @@ export async function fetchAuthorProfile(id: string): Promise<AuthorProfile | nu
 }
 
 export async function fetchReferences(id: string, perPage = 25): Promise<WorkSummary[]> {
+	const oaid = normalizeOpenAlexId(id);
 	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(id)}/references?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
+		`${API_BASE}/works/${encodeURIComponent(oaid)}/references?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
 	);
 	if (!res.ok) return [];
 	const data = await res.json();
@@ -125,8 +138,9 @@ export async function fetchReferences(id: string, perPage = 25): Promise<WorkSum
 }
 
 export async function fetchCitations(id: string, perPage = 25): Promise<WorkSummary[]> {
+	const oaid = normalizeOpenAlexId(id);
 	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(id)}/citations?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
+		`${API_BASE}/works/${encodeURIComponent(oaid)}/citations?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
 	);
 	if (!res.ok) return [];
 	const data = await res.json();
@@ -134,8 +148,9 @@ export async function fetchCitations(id: string, perPage = 25): Promise<WorkSumm
 }
 
 export async function fetchRelatedWorks(id: string, perPage = 25): Promise<WorkSummary[]> {
+	const oaid = normalizeOpenAlexId(id);
 	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(id)}/related_works?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
+		`${API_BASE}/works/${encodeURIComponent(oaid)}/related_works?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
 	);
 	if (!res.ok) return [];
 	const data = await res.json();

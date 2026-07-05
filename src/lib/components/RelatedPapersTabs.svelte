@@ -12,7 +12,13 @@
 	let similar = $state<WorkSummary[]>([]);
 	let loading = $state(false);
 
-	const TABS: { id: TabId; label: string; count: number; data: WorkSummary[] } = $derived([
+	interface Tab {
+		id: TabId;
+		label: string;
+		count: number;
+		data: WorkSummary[];
+	}
+	const TABS: Tab[] = $derived([
 		{ id: "references", label: "References", count: references.length, data: references },
 		{ id: "citations", label: "Citations", count: citations.length, data: citations },
 		{ id: "similar", label: "Similar", count: similar.length, data: similar },
@@ -71,16 +77,30 @@
 				<div class="divide-y divide-outline-dim">
 					{#each currentData as item}
 						<div class="py-3">
-							<a
-								href="{base}/papers/{item.id}"
-								class="text-sm font-bold text-on-surface hover:text-primary transition-colors"
-							>
-								{item.title}
-							</a>
+							{#if item.arxivId}
+								<a
+									href="{base}/papers/{item.arxivId}"
+									class="text-sm font-bold text-on-surface hover:text-primary transition-colors"
+								>
+									{item.title}
+								</a>
+							{:else}
+								<a
+									href={item.openalexUrl}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="text-sm font-bold text-on-surface hover:text-primary transition-colors"
+								>
+									{item.title}
+								</a>
+							{/if}
 							<p class="text-xs text-secondary mt-1">
 								{item.authors.slice(0, 3).map((a) => a.name).join(", ")}
 								{#if item.publicationYear} · {item.publicationYear}{/if}
 								· {item.citedByCount} citations
+								{#if !item.arxivId}
+									<span class="text-outline"> · openalex.org ↗</span>
+								{/if}
 							</p>
 						</div>
 					{/each}

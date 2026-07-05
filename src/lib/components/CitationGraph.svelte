@@ -3,6 +3,7 @@
 	import * as d3 from "d3";
 	import { base } from "$app/paths";
 	import { fetchReferences, fetchCitations } from "$lib/utils/openalex";
+	import type { WorkSummary } from "$lib/types";
 
 	let { openalexWorkId, currentTitle, arxivId }: {
 		openalexWorkId: string | null;
@@ -10,8 +11,8 @@
 		arxivId: string;
 	} = $props();
 
-	let svgEl = $state<SVGSVGElement>();
-	let containerEl = $state<HTMLDivElement>();
+	let svgEl = $state<SVGSVGElement | undefined>();
+	let containerEl = $state<HTMLDivElement | undefined>();
 	let loading = $state(true);
 	let timedOut = $state(false);
 	let hasData = $state(false);
@@ -22,6 +23,8 @@
 		label: string;
 		citationCount: number;
 		isCenter: boolean;
+		arxivId: string | null;
+		openalexUrl: string;
 	}
 
 	interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
@@ -59,39 +62,37 @@
 			const nodeMap = new Map<string, GraphNode>();
 			const links: GraphLink[] = [];
 
-			nodeMap.set("center", {
-				id: "center",
-				label: currentTitle.slice(0, 50) + (currentTitle.length > 50 ? "…" : ""),
-				citationCount: 100,
-				isCenter: true,
-			});
+			function toNode(w: WorkSummary, isCenter: boolean): GraphNode {
+				return {
+					id: w.id,
+					label: (isCenter ? currentTitle : w.title).slice(0, 50) + ((isCenter ? currentTitle : w.title).length > 50 ? "…" : ""),
+					citationCount: isCenter ? 100 : w.citedByCount,
+					isCenter,
+					arxivId: w.arxivId,
+					openalexUrl: w.openalexUrl,
+				};
+			}
+
+			nodeMap.set("center", toNode({ id: "center", title: currentTitle, citedByCount: 100, arxivId: null, openalexUrl: "" } as WorkSummary, true));
 
 			for (const r of refs) {
-				nodeMap.set(r.id, {
-					id: r.id,
-					label: r.title.slice(0, 50) + (r.title.length > 50 ? "…" : ""),
-					citationCount: r.citedByCount,
-					isCenter: false,
-				});
+				nodeMap.set(r.id, toNode(r, false));
 				links.push({ source: "center", target: r.id });
 			}
 
 			for (const c of cites) {
 				if (!nodeMap.has(c.id)) {
-					nodeMap.set(c.id, {
-						id: c.id,
-						label: c.title.slice(0, 50) + (c.title.length > 50 ? "…" : ""),
-						citationCount: c.citedByCount,
-						isCenter: false,
-					});
+					nodeMap.set(c.id, toNode(c, false));
 				}
 				links.push({ source: c.id, target: "center" });
 			}
 
 			const nodes = Array.from(nodeMap.values());
+			if (!containerEl) { loading = false; return; }
 			const width = containerEl.clientWidth;
 			const height = 350;
 
+			if (!svgEl) { loading = false; return; }
 			const svg = d3.select(svgEl)
 				.attr("viewBox", [0, 0, width, height]);
 
@@ -130,7 +131,11 @@
 				.style("cursor", "pointer")
 				.on("click", (_event, d) => {
 					if (!d.isCenter) {
-						window.location.href = `${base}/papers/${d.id}`;
+						if (d.arxivId) {
+							window.location.href = `${base}/papers/${d.arxivId}`;
+						} else {
+							window.open(d.openalexUrl, "_blank");
+						}
 					}
 				});
 
@@ -152,10 +157,10 @@
 
 			simulation.on("tick", () => {
 				link
-					.attr("x1", (d) => (d.source as GraphNode).x!)
-					.attr("y1", (d) => (d.source as GraphNode).y!)
-					.attr("x2", (d) => (d.target as GraphNode).x!)
-					.attr("y2", (d) => (d.target as GraphNode).y!);
+					.attr("x1", (d) => ((d.source as unknown) as GraphNode).x!)
+					.attr("y1", (d) => ((d.source as unknown) as GraphNode).y!)
+					.attr("x2", (d) => ((d.target as unknown) as GraphNode).x!)
+					.attr("y2", (d) => ((d.target as unknown) as GraphNode).y!);
 				node.attr("transform", (d) => `translate(${d.x},${d.y})`);
 			});
 

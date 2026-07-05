@@ -4,7 +4,7 @@
 
 	let concept = $state<{ id: string; name: string; description: string | null; worksCount: number } | null>(null);
 	let subConcepts = $state<{ id: string; name: string; worksCount: number }[]>([]);
-	let works = $state<{ id: string; title: string; authors: string; year: number | null }[]>([]);
+	let works = $state<{ id: string; title: string; authors: string; year: number | null; isArxiv: boolean; openalexUrl: string }[]>([]);
 	let loading = $state(true);
 
 	async function loadConcept() {
@@ -45,11 +45,17 @@
 				const d = await worksRes.json();
 				works = (d.results ?? []).map((w: Record<string, unknown>) => {
 					const authorships = (w as { authorships?: Record<string, unknown>[] }).authorships ?? [];
+					const doi = (w as { doi?: string | null }).doi ?? null;
+					const arxivMatch = doi ? doi.match(/^https?:\/\/doi\.org\/10\.48550\/arXiv\.(.+)$/i) : null;
+					const arxivId = arxivMatch ? arxivMatch[1] : null;
+					const oaId = (w.id as string).replace(/^https?:\/\/openalex\.org\/works\//, "");
 					return {
-						id: (w.id as string).replace(/^https?:\/\/openalex\.org\/works\//, ""),
+						id: arxivId ?? oaId,
 						title: (w as { title?: string }).title ?? "",
 						authors: authorships.map((a) => (a.author as { display_name?: string })?.display_name ?? "").join(", "),
 						year: (w as { publication_year?: number | null }).publication_year ?? null,
+						isArxiv: !!arxivId,
+						openalexUrl: `https://openalex.org/${oaId}`,
 					};
 				});
 			}
@@ -58,7 +64,9 @@
 		}
 	}
 
-	$effect(loadConcept);
+	$effect(() => {
+		loadConcept();
+	});
 </script>
 
 <svelte:head>
@@ -116,11 +124,18 @@
 				<div class="divide-y divide-outline-dim">
 					{#each works as w}
 						<div class="py-3">
-							<a href="{base}/papers/{w.id}" class="text-sm font-bold text-on-surface hover:text-primary transition-colors">
-								{w.title}
-							</a>
+							{#if w.isArxiv}
+								<a href="{base}/papers/{w.id}" class="text-sm font-bold text-on-surface hover:text-primary transition-colors">
+									{w.title}
+								</a>
+							{:else}
+								<a href={w.openalexUrl} target="_blank" rel="noopener noreferrer" class="text-sm font-bold text-on-surface hover:text-primary transition-colors">
+									{w.title}
+								</a>
+							{/if}
 							<p class="text-xs text-secondary mt-1">
 								{w.authors}{#if w.year} · {w.year}{/if}
+								{#if !w.isArxiv}<span class="text-outline"> · openalex.org ↗</span>{/if}
 							</p>
 						</div>
 					{/each}

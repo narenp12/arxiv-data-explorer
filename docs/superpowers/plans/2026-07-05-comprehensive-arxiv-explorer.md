@@ -1,6 +1,6 @@
 # Comprehensive arXiv Explorer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Transform the arXiv Explorer into a comprehensive research paper explorer with concept browsing, author profiles, citation graph traversal, related papers, and advanced search filters — all backed by a new OpenAlex supplemental data layer.
 
@@ -29,7 +29,7 @@
 - Consumes: `searchPapers()` from `src/lib/utils/db.ts` (already exists)
 - Produces: `<SearchFilters>` component with `onChange` event dispatching `{ yearRange, fieldOfStudy, minCites }`
 
-- [ ] **Step 1: Create SearchFilters.svelte**
+- [x] **Step 1: Create SearchFilters.svelte**
 
 ```svelte
 <script lang="ts">
@@ -109,7 +109,7 @@
 </div>
 ```
 
-- [ ] **Step 2: Modify SearchView.svelte to integrate filters**
+- [x] **Step 2: Modify SearchView.svelte to integrate filters**
 
 Read the current SearchView.svelte first:
 
@@ -122,7 +122,7 @@ Replace the file to add filter integration. The key changes:
 - Add filter state synced to URL search params
 - Pass filters to `searchPapers()` as part of the API call
 
-- [ ] **Step 3: Update the searchPapers call to pass filters**
+- [x] **Step 3: Update the searchPapers call to pass filters**
 
 Modify the `searchPapers` call in SearchView.svelte. When filters are active, append them to the S2 API URL:
 
@@ -134,7 +134,7 @@ if (options?.fieldOfStudy) url += `&fieldsOfStudy=${encodeURIComponent(options.f
 if (options?.minCites) url += `&minCitationCount=${encodeURIComponent(options.minCites)}`;
 ```
 
-- [ ] **Step 4: Verify build**
+- [x] **Step 4: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -142,7 +142,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds with no errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/components/SearchFilters.svelte src/lib/components/SearchView.svelte src/routes/papers/+page.svelte
@@ -159,7 +159,7 @@ git commit -m "feat: add advanced search filters (year, S2 field, min citations)
 **Interfaces:**
 - Produces: `/api/openalex/*` endpoint available in both dev and prod
 
-- [ ] **Step 1: Create CF Pages Function proxy**
+- [x] **Step 1: Create CF Pages Function proxy**
 
 ```js
 // functions/api/openalex/[[path]].js
@@ -187,7 +187,7 @@ export async function onRequest({ request, params, env }) {
 }
 ```
 
-- [ ] **Step 2: Add dev proxy to vite.config.ts**
+- [x] **Step 2: Add dev proxy to vite.config.ts**
 
 ```ts
 // Add this entry to the proxy map in vite.config.ts:
@@ -220,7 +220,7 @@ proxy: {
 },
 ```
 
-- [ ] **Step 3: Verify proxy works in dev**
+- [x] **Step 3: Verify proxy works in dev**
 
 ```bash
 # Start dev server in background, then test the proxy
@@ -229,7 +229,7 @@ curl -s "http://localhost:5173/api/openalex/works/doi:10.48550/arXiv.2401.00001"
 
 Expected: Returns JSON from OpenAlex (200 response with work data).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add functions/api/openalex/[[path]].js vite.config.ts
@@ -247,7 +247,7 @@ git commit -m "feat: add OpenAlex API proxy (CF Functions + Vite dev)"
 - Consumes: `/api/openalex/*` proxy (Task 2)
 - Produces: `fetchConcepts`, `fetchAuthorProfile`, `fetchReferences`, `fetchCitations`, `fetchRelatedWorks` functions + `ConceptTag`, `AuthorProfile`, `WorkSummary` types
 
-- [ ] **Step 1: Add types to src/lib/types.ts**
+- [x] **Step 1: Add types to src/lib/types.ts**
 
 ```ts
 // Add after existing types:
@@ -287,7 +287,7 @@ export interface WorkSummary {
 }
 ```
 
-- [ ] **Step 2: Create src/lib/utils/openalex.ts**
+- [x] **Step 2: Create src/lib/utils/openalex.ts**
 
 ```ts
 const API_BASE = "/api/openalex";
@@ -430,7 +430,7 @@ export async function fetchRelatedWorks(id: string, perPage = 25): Promise<WorkS
 }
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -438,7 +438,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds with no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/lib/types.ts src/lib/utils/openalex.ts
@@ -454,13 +454,13 @@ git commit -m "feat: add OpenAlex utility functions and types"
 **Interfaces:**
 - Consumes: `fetchConcepts()` from `openalex.ts`
 
-- [ ] **Step 1: Read current detail page**
+- [x] **Step 1: Read current detail page**
 
 ```bash
 cat src/routes/papers/[...id]/+page.svelte
 ```
 
-- [ ] **Step 2: Add concept pre-warming**
+- [x] **Step 2: Add concept pre-warming**
 
 After the existing `getPaperDetail` call, add an `$effect` that fetches concepts when the detail loads:
 
@@ -481,7 +481,7 @@ $effect(() => {
 });
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -489,7 +489,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/routes/papers/[...id]/+page.svelte
@@ -508,7 +508,7 @@ git commit -m "feat: pre-warm concept data on paper detail page"
 - Consumes: `fetchConcepts()` (indirectly — fetches works filtered by concept)
 - Consumes: `WorkSummary` type
 
-- [ ] **Step 1: Create concept browse page**
+- [x] **Step 1: Create concept browse page**
 
 ```svelte
 <!-- src/routes/concepts/+page.svelte -->
@@ -572,7 +572,7 @@ git commit -m "feat: pre-warm concept data on paper detail page"
 </div>
 ```
 
-- [ ] **Step 2: Create concept detail page**
+- [x] **Step 2: Create concept detail page**
 
 ```svelte
 <!-- src/routes/concepts/[id]/+page.svelte -->
@@ -708,7 +708,7 @@ git commit -m "feat: pre-warm concept data on paper detail page"
 </div>
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -716,7 +716,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/routes/concepts/
@@ -733,7 +733,7 @@ git commit -m "feat: add concept browsing pages (browse + concept detail)"
 **Interfaces:**
 - Consumes: `ConceptTag[]` (pre-warmed in Task 4)
 
-- [ ] **Step 1: Create ConceptPill component**
+- [x] **Step 1: Create ConceptPill component**
 
 ```svelte
 <!-- src/lib/components/ConceptPill.svelte -->
@@ -767,7 +767,7 @@ git commit -m "feat: add concept browsing pages (browse + concept detail)"
 {/if}
 ```
 
-- [ ] **Step 2: Add concept pills to detail page**
+- [x] **Step 2: Add concept pills to detail page**
 
 In `src/routes/papers/[...id]/+page.svelte`, after the abstract section, add:
 
@@ -785,7 +785,7 @@ And add the import at the top of the script section:
 import ConceptPill from "$lib/components/ConceptPill.svelte";
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -793,7 +793,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/lib/components/ConceptPill.svelte src/routes/papers/[...id]/+page.svelte
@@ -813,7 +813,7 @@ git commit -m "feat: display concept pills on paper detail page"
 - Consumes: `AuthorProfile`, `WorkSummary` types
 - Produces: Author profile page at `/authors/[id]`
 
-- [ ] **Step 1: Add author ID storage to PaperResult**
+- [x] **Step 1: Add author ID storage to PaperResult**
 
 In `src/lib/utils/db.ts`, modify `PaperResult` interface:
 
@@ -844,7 +844,7 @@ return {
 };
 ```
 
-- [ ] **Step 2: Create author profile page**
+- [x] **Step 2: Create author profile page**
 
 ```svelte
 <!-- src/routes/authors/[id]/+page.svelte -->
@@ -978,7 +978,7 @@ return {
 </div>
 ```
 
-- [ ] **Step 3: Link author names to profile pages in search results**
+- [x] **Step 3: Link author names to profile pages in search results**
 
 Modify `SearchView.svelte` (or `PaperCard.svelte`) to render author names as links with the shape:
 
@@ -995,7 +995,7 @@ Modify `SearchView.svelte` (or `PaperCard.svelte`) to render author names as lin
 {/each}
 ```
 
-- [ ] **Step 4: Verify build**
+- [x] **Step 4: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -1003,7 +1003,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/routes/authors/[id]/+page.svelte src/routes/authors/+page.svelte src/lib/utils/db.ts
@@ -1020,7 +1020,7 @@ git commit -m "feat: add author profile pages with OpenAlex data"
 **Interfaces:**
 - Consumes: `fetchReferences`, `fetchCitations`, `fetchRelatedWorks` from `openalex.ts`
 
-- [ ] **Step 1: Create RelatedPapersTabs component**
+- [x] **Step 1: Create RelatedPapersTabs component**
 
 ```svelte
 <!-- src/lib/components/RelatedPapersTabs.svelte -->
@@ -1117,7 +1117,7 @@ git commit -m "feat: add author profile pages with OpenAlex data"
 </div>
 ```
 
-- [ ] **Step 2: Integrate into detail page**
+- [x] **Step 2: Integrate into detail page**
 
 In `src/routes/papers/[...id]/+page.svelte`, add below the detail content:
 
@@ -1131,7 +1131,7 @@ In `src/routes/papers/[...id]/+page.svelte`, add below the detail content:
 import RelatedPapersTabs from "$lib/components/RelatedPapersTabs.svelte";
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -1139,7 +1139,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/lib/components/RelatedPapersTabs.svelte src/routes/papers/[...id]/+page.svelte
@@ -1157,7 +1157,7 @@ git commit -m "feat: add related papers tabs (references, citations, similar)"
 - Consumes: `fetchReferences`, `fetchCitations` from `openalex.ts`
 - Uses: D3.js (already in `package.json`)
 
-- [ ] **Step 1: Create CitationGraph component**
+- [x] **Step 1: Create CitationGraph component**
 
 ```svelte
 <!-- src/lib/components/CitationGraph.svelte -->
@@ -1327,7 +1327,7 @@ git commit -m "feat: add related papers tabs (references, citations, similar)"
 </div>
 ```
 
-- [ ] **Step 2: Integrate into detail page**
+- [x] **Step 2: Integrate into detail page**
 
 In `src/routes/papers/[...id]/+page.svelte`, after `RelatedPapersTabs`:
 
@@ -1341,7 +1341,7 @@ In `src/routes/papers/[...id]/+page.svelte`, after `RelatedPapersTabs`:
 import CitationGraph from "$lib/components/CitationGraph.svelte";
 ```
 
-- [ ] **Step 3: Verify build**
+- [x] **Step 3: Verify build**
 
 ```bash
 npm run build 2>&1 | tail -20
@@ -1349,7 +1349,7 @@ npm run build 2>&1 | tail -20
 
 Expected: Build succeeds.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/lib/components/CitationGraph.svelte src/routes/papers/[...id]/+page.svelte

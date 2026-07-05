@@ -168,6 +168,17 @@
 			</div>
 		</article>
 
+		{#if concepts.length > 0}
+			<div class="mt-8">
+				<a
+					href="{base}/concepts/{concepts[0].id}"
+					class="inline-flex items-center gap-2 rounded border border-phantom-violet/30 bg-phantom-violet/5 px-4 py-2 text-xs font-bold text-phantom-violet uppercase tracking-wider transition-colors hover:bg-phantom-violet/10"
+				>
+					Explore more like this in {concepts[0].name}
+				</a>
+			</div>
+		{/if}
+
 		<RelatedPapersTabs openalexWorkId={detail.doi} arxivId={detail.id} />
 
 		<CitationGraph openalexWorkId={detail.doi} currentTitle={detail.title} arxivId={detail.id} />
