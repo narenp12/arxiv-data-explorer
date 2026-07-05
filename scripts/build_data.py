@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 
 import polars as pl
@@ -19,6 +20,47 @@ CATEGORY_ALIASES = {
     "comp-gas": "nlin.CG",
 }
 
+# ── domain grouping and colors (from network_app.py) ──
+DOMAIN_NAMES = {
+    "cs": "Computer Science",
+    "math": "Mathematics",
+    "stat": "Statistics",
+    "physics": "Physics",
+    "cond-mat": "Condensed Matter",
+    "astro-ph": "Astrophysics",
+    "eess": "Electrical Engineering & Systems Science",
+    "q-bio": "Quantitative Biology",
+    "q-fin": "Quantitative Finance",
+    "econ": "Economics",
+    "nlin": "Nonlinear Sciences",
+    "nucl": "Nuclear Physics",
+    "bayes-an": "Bayesian Analysis",
+}
+
+DOMAIN_COLORS = {
+    "cs": "#1f77b4",
+    "math": "#ff7f0e",
+    "stat": "#2ca02c",
+    "physics": "#d62728",
+    "astro-ph": "#9467bd",
+    "cond-mat": "#8c564b",
+    "gr-qc": "#7f7f7f",
+    "quant-ph": "#bcbd22",
+    "eess": "#17becf",
+    "q-bio": "#aec7e8",
+    "q-fin": "#ffbb78",
+    "econ": "#98df8a",
+    "nlin": "#ff9896",
+    "nucl": "#c5b0d5",
+    "nucl-th": "#c5b0d5",
+    "nucl-ex": "#c5b0d5",
+    "hep-th": "#e377c2",
+    "hep-ph": "#e377c2",
+    "hep-lat": "#e377c2",
+    "hep-ex": "#e377c2",
+    "bayes-an": "#9edae5",
+}
+
 
 def load_shards(incremental: bool = True) -> pl.DataFrame:
     """Load all Parquet shards from HuggingFace, deduplicate, strip vectors."""
@@ -34,7 +76,7 @@ def load_shards(incremental: bool = True) -> pl.DataFrame:
 
     print("Downloading shards from HuggingFace\u2026")
     cache_path = snapshot_download(REMOTE_REPO, repo_type="dataset")
-    shard_files = sorted(Path(cache_path).glob("*.parquet"))
+    shard_files = sorted(Path(cache_path).rglob("*.parquet"))
 
     dfs = []
     for f in shard_files:
@@ -77,6 +119,87 @@ def load_shards(incremental: bool = True) -> pl.DataFrame:
     return full
 
 
+def build_category_graph(df: pl.DataFrame) -> dict:
+    """Build category co-occurrence graph from papers DataFrame."""
+    exploded = df.select(
+        pl.int_range(0, pl.len()).alias("_row_idx"),
+        pl.col("categories").str.split(" "),
+    ).explode("categories").with_columns(
+        pl.col("categories").replace_strict(
+            list(CATEGORY_ALIASES.keys()),
+            list(CATEGORY_ALIASES.values()),
+            default=pl.col("categories"),
+        ).alias("categories")
+    ).unique(subset=["_row_idx", "categories"])
+
+    paper_counts = exploded.group_by("categories").agg(
+        pl.len().alias("count")
+    ).sort("count", descending=True)
+
+    cooc = exploded.join(exploded, on="_row_idx", suffix="_b").filter(
+        pl.col("categories") < pl.col("categories_b")
+    )
+    cooc_counts = cooc.group_by(["categories", "categories_b"]).agg(
+        pl.len().alias("count")
+    )
+
+    top_n = 200
+    top = paper_counts.head(top_n)
+    cat_set = set(top["categories"].to_list())
+
+    filtered = cooc_counts.filter(
+        pl.col("categories").is_in(cat_set)
+        & pl.col("categories_b").is_in(cat_set)
+        & (pl.col("count") >= 5)
+    )
+
+    node_weight = {r["categories"]: r["count"] for r in top.iter_rows(named=True)}
+    edge_list = list(filtered.iter_rows(named=True))
+    edge_list.sort(key=lambda x: -x["count"])
+    top_20_per_cat: dict[str, list[dict]] = {}
+    for e in edge_list:
+        cat_a = e["categories"]
+        cat_b = e["categories_b"]
+        top_20_per_cat.setdefault(cat_a, []).append(e)
+        top_20_per_cat.setdefault(cat_b, []).append(e)
+    pruned_edges = []
+    seen_pairs = set()
+    for edges in top_20_per_cat.values():
+        edges.sort(key=lambda x: -x["count"])
+        for e in edges[:20]:
+            pair = (e["categories"], e["categories_b"])
+            if pair not in seen_pairs and e["categories"] in cat_set and e["categories_b"] in cat_set:
+                seen_pairs.add(pair)
+                pruned_edges.append(e)
+
+    def domain_of(cat: str) -> str:
+        return cat.split(".")[0]
+
+    nodes = []
+    for cat, weight in node_weight.items():
+        dom = domain_of(cat)
+        nodes.append({
+            "id": cat,
+            "label": cat,
+            "domain": dom,
+            "group": DOMAIN_NAMES.get(dom, dom),
+            "weight": weight,
+            "color": DOMAIN_COLORS.get(dom, "#999999"),
+        })
+
+    edges = [{"source": e["categories"], "target": e["categories_b"], "weight": e["count"]} for e in pruned_edges]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "metadata": {
+            "total_nodes": len(nodes),
+            "total_edges": len(edges),
+            "last_updated": str(df["update_date"].max()),
+        },
+    }
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -97,6 +220,12 @@ if __name__ == "__main__":
         print(f"Using sample of {len(df):,} papers")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("Building category graph\u2026")
+    cat_graph = build_category_graph(df)
+    (DATA_DIR / "category_graph.json").write_text(json.dumps(cat_graph, separators=(",", ":")))
+    print(f"  {cat_graph['metadata']['total_nodes']} nodes, {cat_graph['metadata']['total_edges']} edges")
+
     df.write_parquet(DATA_DIR / "papers.parquet")
 
     print(f"Total papers: {len(df):,}")
