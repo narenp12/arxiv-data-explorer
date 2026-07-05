@@ -389,35 +389,64 @@ def build_author_rankings(df: pl.DataFrame) -> list[dict]:
     return result
 
 
-def build_search_db(df: pl.DataFrame, db_path: Path):
-    if db_path.exists():
-        db_path.unlink()
+def build_search_db(df: pl.DataFrame, out_dir: Path):
+    def year_from_id(pid: str) -> int:
+        try:
+            prefix = pid.split(".")[0]
+            return int(prefix[:2]) + (2000 if int(prefix[:2]) < 50 else 1900)
+        except (ValueError, IndexError):
+            return 0
 
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA synchronous = OFF")
-    conn.execute("PRAGMA journal_mode = MEMORY")
-    conn.execute("PRAGMA cache_size = -8000000")
+    ranges = [
+        (1991, 1999),
+        (2000, 2009),
+        (2010, 2014),
+        (2015, 2019),
+        (2020, 2026),
+    ]
 
-    conn.execute("""
-        CREATE VIRTUAL TABLE papers_fts USING fts5(
-            id UNINDEXED, title, authors,
-            tokenize='porter unicode61',
-            content=''
-        )
-    """)
+    df = df.with_columns(
+        pl.col("id").map_elements(year_from_id, return_dtype=pl.Int32).alias("_year")
+    )
 
-    conn.execute("BEGIN")
-    for batch in df.select(
-        "id", "title",
-        pl.col("authors").fill_null(""),
-    ).iter_slices(n_rows=50000):
-        fts_rows = [(r["id"], r["title"], r["authors"])
-                     for r in batch.iter_rows(named=True)]
-        conn.executemany("INSERT INTO papers_fts VALUES (?, ?, ?)", fts_rows)
-    conn.execute("COMMIT")
+    for start, end in ranges:
+        label = f"{start}-{end}"
+        part = df.filter((pl.col("_year") >= start) & (pl.col("_year") <= end))
+        if part.height == 0:
+            continue
 
-    conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('optimize')")
-    conn.close()
+        db_name = f"search_{label}.db"
+        db_path = out_dir / db_name
+        if db_path.exists():
+            continue
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA synchronous = OFF")
+        conn.execute("PRAGMA journal_mode = MEMORY")
+        conn.execute("PRAGMA cache_size = -8000000")
+
+        conn.execute("""
+            CREATE VIRTUAL TABLE papers_fts USING fts5(
+                id UNINDEXED, title, authors,
+                tokenize='porter unicode61'
+            )
+        """)
+
+        conn.execute("BEGIN")
+        for batch in part.select(
+            "id", "title",
+            pl.col("authors").fill_null(""),
+        ).iter_slices(n_rows=50000):
+            fts_rows = [(r["id"], r["title"], r["authors"])
+                         for r in batch.iter_rows(named=True)]
+            conn.executemany("INSERT INTO papers_fts VALUES (?, ?, ?)", fts_rows)
+        conn.execute("COMMIT")
+
+        conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('optimize')")
+        conn.close()
+
+        size_mb = db_path.stat().st_size / 1024 / 1024
+        print(f"  {db_name}: {size_mb:.1f} MB ({part.height:,} papers)")
 
 
 def parse_args():
@@ -466,11 +495,8 @@ if __name__ == "__main__":
     (DATA_DIR / "author_rankings.json").write_text(json.dumps(author_rankings, separators=(",", ":")))
     print(f"  {len(author_rankings):,} ranked authors")
 
-    print("Building FTS5 search database\u2026")
-    db_path = DATA_DIR / "search.db"
-    build_search_db(df, db_path)
-    size_mb = db_path.stat().st_size / 1024 / 1024
-    print(f"  search.db: {size_mb:.1f} MB")
+    print("Building FTS5 search databases\u2026")
+    build_search_db(df, DATA_DIR)
 
     print("Building time series\u2026")
     ts_dir = DATA_DIR / "timeseries"
