@@ -57,6 +57,9 @@ name = "arxcheck"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [[bin]]
 name = "arxcheck"
 path = "src/bin/arxcheck.rs"
@@ -897,7 +900,7 @@ pub fn validate_profile_json(json: &str) -> JsValue {
 - [ ] **Step 2: Build WASM binary with wasm-pack**
 
 ```bash
-wasm-pack build --target web --out-dir ../../static/wasm/arxcheck --release
+wasm-pack build --target web --out-dir ../../static/wasm/arxcheck --release --no-default-features
 wasm-opt -Oz ../../static/wasm/arxcheck/arxcheck_bg.wasm -o ../../static/wasm/arxcheck/arxcheck_bg.wasm
 ```
 Expected: builds, WASM binary under 100KB gzipped.
