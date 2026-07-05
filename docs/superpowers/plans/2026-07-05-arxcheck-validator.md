@@ -73,9 +73,16 @@ clap = { version = "4", optional = true, features = ["derive"] }
 wasm-bindgen = { version = "0.2", optional = true }
 serde-wasm-bindgen = { version = "0.6", optional = true }
 
-[target.wasm32-unknown-unknown.dependencies]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 ```
 
 - [ ] **Step 2: Write lib.rs**
@@ -887,12 +894,13 @@ pub fn validate_profile_json(json: &str) -> JsValue {
 }
 ```
 
-- [ ] **Step 2: Build for wasm32 target**
+- [ ] **Step 2: Build WASM binary with wasm-pack**
 
 ```bash
-cargo build --target wasm32-unknown-unknown --no-default-features
+wasm-pack build --target web --out-dir ../../static/wasm/arxcheck --release
+wasm-opt -Oz ../../static/wasm/arxcheck/arxcheck_bg.wasm -o ../../static/wasm/arxcheck/arxcheck_bg.wasm
 ```
-Expected: builds.
+Expected: builds, WASM binary under 100KB gzipped.
 
 - [ ] **Step 3: Commit**
 

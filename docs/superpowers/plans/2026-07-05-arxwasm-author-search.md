@@ -64,8 +64,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 ```
 
 - [ ] **Step 2: Write minimal data.rs**
@@ -715,13 +718,16 @@ git commit -m "feat(arxwasm): wire init/search/search_stats wasm exports"
 - Consumes: wasm-bindgen generated JS binder + WASM binary
 - Produces: Svelte component with search input + results list
 
-- [ ] **Step 1: Build WASM binary**
+- [ ] **Step 1: Build WASM binary with size optimization**
 
 ```bash
 cd crates/arxwasm
-wasm-pack build --target web --out-dir ../../static/wasm/arxwasm
+wasm-pack build --target web --out-dir ../../static/wasm/arxwasm --release
+# Post-process with wasm-opt for 50-80% further size reduction
+wasm-opt -Oz ../../static/wasm/arxwasm/arxwasm_bg.wasm -o ../../static/wasm/arxwasm/arxwasm_bg.wasm
+ls -lh ../../static/wasm/arxwasm/arxwasm_bg.wasm
 ```
-Expected: produces `static/wasm/arxwasm/arxwasm_bg.wasm` + `static/wasm/arxwasm/arxwasm.js`.
+Expected: produces `static/wasm/arxwasm/arxwasm_bg.wasm` + JS binder. Binary size < 200KB.
 
 - [ ] **Step 2: Write WASM loader**
 
