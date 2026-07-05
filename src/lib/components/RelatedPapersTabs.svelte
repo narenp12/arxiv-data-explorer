@@ -50,7 +50,7 @@
 						? 'text-primary border-b-2 border-primary font-bold'
 						: 'text-secondary hover:text-on-surface hover:bg-surface-container'}"
 			>
-				{tab.label}
+				{tab.label} ({tab.count})
 			</button>
 		{/each}
 	</div>
