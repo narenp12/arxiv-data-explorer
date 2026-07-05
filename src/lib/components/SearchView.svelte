@@ -11,6 +11,8 @@
 	let offset = $state(0);
 	let searching = $state(false);
 	let error: string | null = $state(null);
+	let yearFrom = $state("");
+	let yearTo = $state("");
 
 	const LIMIT = 30;
 
@@ -57,10 +59,13 @@
 	async function doSearch() {
 		error = null;
 		const seq = ++requestSeq;
+		const currentYear = new Date().getFullYear();
+		const yr = yearFrom && yearTo ? `${yearFrom}-${yearTo}` : yearFrom || yearTo ? `${yearFrom || "1991"}-${yearTo || String(currentYear)}` : undefined;
 		try {
 			const res = await searchPapers(query, {
 				limit: LIMIT,
 				offset,
+				yearRange: yr,
 			});
 			if (seq !== requestSeq) return;
 			results = res.results;
@@ -82,52 +87,71 @@
 	<div class="relative">
 		<input
 			type="search"
-			placeholder="Search papers… (e.g. quantum computing)"
+			placeholder="Search arXiv papers… (e.g. quantum computing)"
 			oninput={onInput}
 			value={query}
-			class="w-full rounded-xl border border-line bg-panel px-5 py-3.5 text-base text-ink transition-colors placeholder:text-faint focus:border-accent focus:outline-none"
+			class="w-full border-2 border-outline/30 bg-surface px-5 py-4 font-mono text-base text-on-surface transition-all placeholder:text-outline hover:border-outline/50 focus:border-primary focus:outline-none focus:shadow-[0_0_20px_rgba(0,219,231,0.12)]"
 		/>
 		{#if searching}
-			<div class="kicker absolute top-4 right-4 animate-pulse">
-				searching…
+			<div class="label-caps absolute top-1/2 right-5 -translate-y-1/2 flex items-center gap-1.5">
+				<span class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]"></span>
+				SEARCHING
 			</div>
 		{/if}
 	</div>
 
+	<div class="flex items-center gap-2 font-mono text-xs text-on-surface-variant">
+		<label class="label-caps" for="year-from">Year</label>
+		<input
+			id="year-from"
+			type="number" placeholder="From" min="1991" max={new Date().getFullYear()}
+			bind:value={yearFrom}
+			oninput={() => { offset = 0; clearTimeout(debounceTimer); if (query.trim().length >= 2) { searching = true; debounceTimer = setTimeout(() => doSearch(), 300); } }}
+			class="w-20 border border-outline/20 bg-surface-container px-2 py-1.5 text-on-surface transition-colors focus:border-primary focus:outline-none placeholder:text-outline"
+		/>
+		<span class="text-outline">–</span>
+		<input
+			type="number" placeholder="To" min="1991" max={new Date().getFullYear()}
+			bind:value={yearTo}
+			oninput={() => { offset = 0; clearTimeout(debounceTimer); if (query.trim().length >= 2) { searching = true; debounceTimer = setTimeout(() => doSearch(), 300); } }}
+			class="w-20 border border-outline/20 bg-surface-container px-2 py-1.5 text-on-surface transition-colors focus:border-primary focus:outline-none placeholder:text-outline"
+		/>
+	</div>
+
 	{#if error}
-		<div class="py-16 text-center text-sm text-accent">
+		<div class="py-16 text-center font-mono text-sm text-warning-red">
 			{error}
 			<button
 				onclick={() => doSearch()}
-				class="ml-2 underline underline-offset-2"
+				class="ml-2 text-primary underline underline-offset-4 decoration-primary/30"
 			>
 				Retry
 			</button>
 		</div>
 	{:else if query.trim().length === 0}
 		<div class="py-16 text-center">
-			<p class="font-sans text-base text-faint">Type at least 2 characters to search</p>
+			<p class="font-mono text-sm text-outline">TYPE AT LEAST 2 CHARACTERS TO SCAN</p>
 		</div>
 	{:else if !searching && results.length === 0}
 		<div class="py-16 text-center">
-			<p class="font-sans text-base text-faint">No results for “{query}”</p>
+			<p class="font-mono text-sm text-outline">No results for <span class="text-on-surface">“{query}”</span></p>
 		</div>
 	{:else}
-		<div class="flex items-baseline justify-between border-b border-line pb-2">
-			<div class="font-mono text-xs text-soft">
-				<span class="text-accent">{total.toLocaleString()}</span>
+		<div class="flex items-baseline justify-between border-b border-outline/20 pb-2">
+			<div class="font-mono text-xs text-on-surface-variant">
+				<span class="text-primary font-bold">{total.toLocaleString()}</span>
 				result{total !== 1 ? "s" : ""} · “{query}”
-				<span class="ml-2 text-faint">via Semantic Scholar</span>
+				<span class="ml-2 text-outline">via Semantic Scholar</span>
 			</div>
 			{#if total > LIMIT}
-				<div class="kicker">
+				<div class="label-caps">
 					p. {Math.floor(offset / LIMIT) + 1} / {Math.ceil(total / LIMIT)}
 				</div>
 			{/if}
 		</div>
 
 		<div class="!mt-0">
-			{#each results as paper (paper.id)}
+			{#each results as paper, i (paper.id || i)}
 				<PaperCard {paper} />
 			{/each}
 		</div>
@@ -137,16 +161,16 @@
 				<button
 					onclick={prevPage}
 					disabled={offset <= 0}
-					class="rounded-full border border-line px-5 py-2 font-mono text-xs text-soft transition-colors hover:border-faint hover:text-ink disabled:opacity-30 disabled:hover:border-line disabled:hover:text-soft"
+					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant"
 				>
-					← Prev
+					← PREV
 				</button>
 				<button
 					onclick={nextPage}
 					disabled={offset + LIMIT >= total}
-					class="rounded-full border border-line px-5 py-2 font-mono text-xs text-soft transition-colors hover:border-faint hover:text-ink disabled:opacity-30 disabled:hover:border-line disabled:hover:text-soft"
+					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant"
 				>
-					Next →
+					NEXT →
 				</button>
 			</div>
 		{/if}

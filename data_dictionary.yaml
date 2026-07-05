@@ -1,10 +1,9 @@
 dataset:
   name: arxiv
   description: >
-    arXiv paper metadata. Supports two sources:
+    arXiv paper metadata. Two sources:
     - Local sample: arxiv_random_sample.parquet (1,000,000 papers)
     - Remote: open-index/open-arxiv on HuggingFace (2,990,000 papers, updated weekly)
-  source: arxiv_random_sample.parquet (local) / open-index/open-arxiv (remote)
   format: Parquet
   local_rows: 1_000_000
   remote_rows: 2_990_000

@@ -43,8 +43,6 @@
     if (!data || !svgEl) return;
     const w = svgEl.clientWidth || containerEl?.clientWidth || 800;
     const h = Math.max(400, Math.min(600, w * 0.55));
-    // Snapshot: d3 mutates nodes (x/y each tick); mutating the $state proxy
-    // would re-trigger this effect and wipe the SVG in an endless loop
     renderGraph($state.snapshot(data) as CategoryGraphData, svgEl, w, h);
   });
 
@@ -53,8 +51,6 @@
 
     d3.select(svg).selectAll("*").remove();
 
-    // Static layout: run the simulation to convergence synchronously, then
-    // draw once. No per-frame rAF work, and the graph appears fully settled.
     const simulation = d3.forceSimulation(graph.nodes)
       .force("link", d3.forceLink(graph.edges).id((d: any) => d.id).distance(60))
       .force("charge", d3.forceManyBody().strength(-120))
@@ -71,9 +67,9 @@
       .selectAll("line")
       .data(graph.edges)
       .join("line")
-      .attr("stroke", "var(--faint)")
+      .attr("stroke", "var(--outline)")
       .attr("stroke-width", (d) => Math.max(0.5, Math.log(d.weight) / 3))
-      .attr("stroke-opacity", 0.35)
+      .attr("stroke-opacity", 0.25)
       .attr("x1", (d: any) => d.source.x)
       .attr("y1", (d: any) => d.source.y)
       .attr("x2", (d: any) => d.target.x)
@@ -85,13 +81,12 @@
       .join("circle")
       .attr("r", (d) => Math.max(4, Math.sqrt(d.weight) / 15))
       .attr("fill", (d) => d.color)
-      .attr("stroke", "var(--paper)")
-      .attr("stroke-width", 1)
-      .attr("cursor", "pointer")
+      .attr("stroke", "var(--surface-container)")
+      .attr("stroke-width", 1.5)
+      .attr("cursor", "crosshair")
       .attr("cx", (d: any) => d.x)
       .attr("cy", (d: any) => d.y);
 
-    // append("title") returns the <title> selection — keep it off `node`
     node.append("title")
       .text((d) => `${d.label} (${d.weight.toLocaleString()} papers)`);
   }
@@ -99,13 +94,14 @@
 
 <div bind:this={containerEl} class="w-full">
   {#if loading}
-    <div class="flex h-[450px] items-center justify-center">
-      <div class="kicker animate-pulse">Loading graph…</div>
+    <div class="label-caps flex h-[450px] items-center justify-center gap-2">
+      <span class="live-dot animate-pulse"></span>
+      Loading graph…
     </div>
   {:else if error}
-    <div class="flex h-[450px] items-center justify-center text-sm text-accent">
+    <div class="flex h-[450px] items-center justify-center font-mono text-sm text-warning-red">
       Failed to load: {error}
-      <button onclick={() => location.reload()} class="ml-2 underline underline-offset-2">Retry</button>
+      <button onclick={() => location.reload()} class="ml-2 text-primary underline underline-offset-4 decoration-primary/30">Retry</button>
     </div>
   {:else if data}
     <svg

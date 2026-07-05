@@ -64,9 +64,10 @@ export async function searchPapers(
 	const limit = options?.limit ?? 30;
 	const offset = options?.offset ?? 0;
 
-	const res = await rateLimitedFetch(
-		`${API_BASE}/paper/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`,
-	);
+	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
+	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
+
+	const res = await rateLimitedFetch(url);
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
 
 	const data = await res.json();

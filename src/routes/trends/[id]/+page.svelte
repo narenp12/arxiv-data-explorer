@@ -55,9 +55,13 @@
 
 		const svg = d3.select(chartSvg);
 
+		const dataStartYear = 2007;
 		svg.append("g")
 			.attr("transform", `translate(0,${h - margin.bottom})`)
-			.call(d3.axisBottom(x).ticks(8).tickFormat((i: any) => `${2007 + Math.floor(i / 12)}`));
+			.call(d3.axisBottom(x).ticks(8).tickFormat((_d: d3.NumberValue, i: number) => {
+				const monthVal = d.months[Math.round(i)];
+				return `${dataStartYear + Math.floor(monthVal / 12)}`;
+			}));
 
 		svg.append("g")
 			.attr("transform", `translate(${margin.left},0)`)
@@ -66,7 +70,7 @@
 		svg.append("path")
 			.datum(d.observed.map((v: number, i: number) => [x(i), y(v)]))
 			.attr("fill", "none")
-			.attr("stroke", "var(--accent)")
+			.attr("stroke", "var(--primary)")
 			.attr("stroke-width", 1.5)
 			.attr("d", d3.line() as any);
 	});
@@ -76,43 +80,49 @@
 	<title>{$page.params.id ?? "Category"} — arXiv Explorer</title>
 </svelte:head>
 
-<div class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-	<a href="/trends" class="kicker mb-6 inline-flex items-center gap-1 transition-colors hover:text-accent">← Causal trends</a>
+<div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
+	<a href="/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
 
 	{#if loading}
-		<div class="kicker animate-pulse py-20 text-center">Loading…</div>
+		<div class="label-caps flex items-center justify-center gap-2 py-20">
+			<span class="live-dot animate-pulse"></span>
+			Loading…
+		</div>
 	{:else if error}
-		<div class="py-20 text-center"><p class="font-display text-2xl font-bold text-ink">Not found</p><p class="kicker">{error}</p></div>
+		<div class="py-20 text-center">
+			<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
+			<p class="label-caps">{error}</p>
+		</div>
 	{:else if detail}
-		<header class="mb-8">
-			<p class="kicker mb-3">Category dynamics</p>
-			<h1 class="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">{detail.id}</h1>
-			<p class="mt-2 text-sm text-soft">
-				Trend: <span class="font-mono text-ink">{(detail.trend * 100).toFixed(3)}%</span> per month
-				<span class="text-faint"> [{(detail.trend_ci[0] * 100).toFixed(3)}, {(detail.trend_ci[1] * 100).toFixed(3)}]</span>
+		<header class="mb-8 border-l-4 border-primary pl-8">
+			<p class="label-caps mb-3">Category dynamics</p>
+			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">{detail.id}</h1>
+			<p class="mt-2 font-mono text-sm text-on-surface-variant">
+				Trend: <span class="text-on-surface">{(detail.trend * 100).toFixed(3)}%</span> per month
+				<span class="text-outline"> [{(detail.trend_ci[0] * 100).toFixed(3)}, {(detail.trend_ci[1] * 100).toFixed(3)}]</span>
 			</p>
 		</header>
 
-		<div class="mb-10 overflow-hidden rounded-xl border border-line bg-panel p-4">
+		<div class="mb-10 border border-outline/20 bg-surface-container p-4">
 			<svg bind:this={chartSvg} class="h-[250px] w-full"></svg>
 		</div>
 
-		<div class="grid grid-cols-1 gap-8 sm:grid-cols-2">
-			<div>
-				<p class="kicker mb-3">What drives {detail.id}</p>
+		<div class="grid grid-cols-1 gap-px bg-outline/20 sm:grid-cols-2">
+			<div class="bg-surface p-5">
+				<p class="label-caps mb-3">What drives {detail.id}</p>
 				{#if incomingEdges.length === 0}
-					<p class="text-sm text-faint">No significant incoming influences detected.</p>
+					<p class="font-mono text-sm text-outline">No significant incoming influences detected.</p>
 				{:else}
-					<div class="space-y-2">
+					<div class="space-y-px">
 						{#each incomingEdges.slice(0, 15) as edge}
-							<a href="/trends/{edge.source}" class="block rounded-lg border border-line bg-panel p-3 transition-colors hover:border-accent/30">
+							<a href="/trends/{edge.source}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
 								<div class="flex items-baseline justify-between">
-									<span class="font-mono text-sm text-accent">{edge.source}</span>
-									<span class="font-mono text-xs" class:text-green-600={edge.weight > 0} class:text-red-600={edge.weight < 0}>
+									<span class="font-mono text-sm font-bold text-primary">{edge.source}</span>
+									<span class="font-mono text-xs" class:text-signal-green={edge.weight > 0} class:text-warning-red={edge.weight < 0}>
 										{edge.weight > 0 ? "+" : ""}{(edge.weight * 100).toFixed(2)}%
 									</span>
 								</div>
-								<div class="mt-1 font-mono text-[11px] text-faint">
+								<div class="mt-1 font-mono text-[11px] text-outline">
 									CI [{(edge.ci_lower * 100).toFixed(2)}, {(edge.ci_upper * 100).toFixed(2)}]
 									· P = {edge.prob.toFixed(2)}
 								</div>
@@ -122,21 +132,21 @@
 				{/if}
 			</div>
 
-			<div>
-				<p class="kicker mb-3">What {detail.id} drives</p>
+			<div class="bg-surface p-5">
+				<p class="label-caps mb-3">What {detail.id} drives</p>
 				{#if outgoingEdges.length === 0}
-					<p class="text-sm text-faint">No significant outgoing influences detected.</p>
+					<p class="font-mono text-sm text-outline">No significant outgoing influences detected.</p>
 				{:else}
-					<div class="space-y-2">
+					<div class="space-y-px">
 						{#each outgoingEdges.slice(0, 15) as edge}
-							<a href="/trends/{edge.target}" class="block rounded-lg border border-line bg-panel p-3 transition-colors hover:border-accent/30">
+							<a href="/trends/{edge.target}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
 								<div class="flex items-baseline justify-between">
-									<span class="font-mono text-sm text-accent">{edge.target}</span>
-									<span class="font-mono text-xs" class:text-green-600={edge.weight > 0} class:text-red-600={edge.weight < 0}>
+									<span class="font-mono text-sm font-bold text-primary">{edge.target}</span>
+									<span class="font-mono text-xs" class:text-signal-green={edge.weight > 0} class:text-warning-red={edge.weight < 0}>
 										{edge.weight > 0 ? "+" : ""}{(edge.weight * 100).toFixed(2)}%
 									</span>
 								</div>
-								<div class="mt-1 font-mono text-[11px] text-faint">
+								<div class="mt-1 font-mono text-[11px] text-outline">
 									CI [{(edge.ci_lower * 100).toFixed(2)}, {(edge.ci_upper * 100).toFixed(2)}]
 									· P = {edge.prob.toFixed(2)}
 								</div>

@@ -1,26 +1,25 @@
 # arXiv Network Explorer
 
-Deployed at [arxivexplorer.streamlit.app](https://arxivexplorer.streamlit.app).
+A pre-rendered SvelteKit 5 static site for exploring 3M+ arXiv papers. Features D3.js force-directed category graphs, author rankings, paper search, category hierarchy, and Bayesian causal trend inference.
 
-Two apps for exploring 1M+ arXiv papers. The **Network Explorer** (`arxiv_explorer/network_app.py`) has network graphs, drill-down explorer, and network statistics. The **Explorer** (`arxiv_explorer/app.py`) is a simpler dashboard with KPIs and paper search.
+### Pages
 
-### Tabs (Network Explorer)
+- **Home** — hero, stats band, interactive category co-occurrence network
+- **Papers** — search with Semantic Scholar API, paginated results
+- **Authors** — ranked author list with paper counts
+- **Categories** — domain/category hierarchy with color-coded indicators
+- **Trends** — causal inference graph from Bayesian Poisson VAR (Granger causality between categories)
 
-- **Research Area Connections** — select a category to see its top co-occurring neighbors in a force-directed graph
-- **Collaboration Network** — search an author to see their weighted co-author ego-graph; click any co-author to explore their network
-- **Network Stats** — author count distribution, prolific authors, multi-category paper statistics
-- **Drill-Down Explorer** — hierarchical drill-down: Domain → Category → Authors → Papers with breadcrumb navigation
+### Build
 
-### Data
+```bash
+npm install
+npm run build
+```
 
-Two sources switchable via sidebar: local sample (1M papers) or HuggingFace (2.99M papers). Remote source auto-downloads on first use.
+The build pipeline runs a Bayesian Poisson VAR model (NumPyro/JAX) to compute causal category dynamics, outputting edge posteriors and category trends to `static/data/`.
 
 ### Packages
 
-Streamlit, Polars, NetworkX, Plotly, HuggingFace Hub.
-
-### Category aliases
-
-arXiv renamed some categories over time. The app maps legacy codes to their modern equivalents so they group correctly in graphs and statistics:
-
-`math-ph` → `math.MP`, `physics` → `physics.gen-ph`, `q-alg` → `math.QA`, `q-bio` → `q-bio.OT`, `q-fin` → `q-fin.GN`, `adap-org` → `nlin.AO`, `cmp-lg` → `cs.CL`.
+SvelteKit 5, D3.js, Tailwind CSS 4, TypeScript.  
+Data pipeline: Polars, NumPyro/JAX, HuggingFace Hub.

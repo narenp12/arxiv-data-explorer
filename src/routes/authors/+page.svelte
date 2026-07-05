@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { base } from "$app/paths";
+	import AuthorGraph from "$lib/components/AuthorGraph.svelte";
 
 	interface AuthorRank {
 		name: string;
@@ -27,35 +28,49 @@
 	<title>Authors — arXiv Explorer</title>
 </svelte:head>
 
-<div class="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
-	<header class="mb-8">
-		<p class="kicker mb-3">Co-authorship networks</p>
-		<h1 class="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">Authors</h1>
-		<p class="mt-2 max-w-xl text-sm leading-relaxed text-soft">
-			{loading ? "Loading…" : `${authors.length.toLocaleString()} most prolific authors in the corpus`}
+<div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
+	<header class="mb-10 border-l-4 border-primary pl-8">
+		<p class="label-caps mb-3">Co-authorship networks</p>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Authors</h1>
+		<p class="mt-2 max-w-xl font-mono text-sm text-on-surface-variant">
+			{loading ? "Loading signal…" : `${authors.length.toLocaleString()} most prolific authors in the corpus`}
 		</p>
 	</header>
 
+	<section class="mb-10">
+		<div class="mb-3 flex items-baseline justify-between border-b border-outline/30 pb-2">
+			<div>
+				<p class="label-caps mb-1">Figure 01 · Force-directed</p>
+				<h2 class="font-display text-xl font-bold tracking-tight text-on-surface">Co-authorship network</h2>
+			</div>
+			<p class="hidden font-mono text-[11px] text-on-surface-variant sm:block">Top 80 authors by paper count</p>
+		</div>
+		<AuthorGraph />
+	</section>
+
 	{#if loading}
-		<div class="kicker animate-pulse py-16 text-center">Loading…</div>
+		<div class="label-caps flex items-center justify-center gap-2 py-16">
+			<span class="live-dot animate-pulse"></span>
+			Loading…
+		</div>
 	{:else}
-		<div class="divide-y divide-line">
+		<div class="divide-y divide-outline/20 border-t border-outline/30">
 			{#each authors as author, i}
 				<a
-					href="/papers?q={encodeURIComponent(author.name)}"
-					class="group flex items-center gap-4 px-2 py-3 transition-colors hover:bg-accent/4"
+					href="/authors/{encodeURIComponent(author.name)}"
+					class="group flex items-center gap-4 px-3 py-3 transition-colors hover:bg-surface-container-low"
 				>
-					<span class="w-8 text-right font-mono text-xs text-faint">{i + 1}</span>
+					<span class="w-8 text-right font-mono text-xs text-outline">{i + 1}</span>
 					<div class="flex-1 min-w-0">
-						<div class="truncate text-sm font-medium text-ink group-hover:text-accent">
+						<div class="truncate font-mono text-sm font-bold text-on-surface group-hover:text-primary">
 							{author.name}
 						</div>
 					</div>
 					<div class="flex items-baseline gap-3">
-						<span class="font-mono text-xs text-soft">{author.papers.toLocaleString()} papers</span>
-						<div class="h-1.5 w-20 overflow-hidden rounded-full bg-line">
+						<span class="font-mono text-xs text-on-surface-variant">{author.papers.toLocaleString()} papers</span>
+						<div class="h-1 w-20 overflow-hidden bg-surface-container-high">
 							<div
-								class="h-full rounded-full bg-accent/50"
+								class="h-full bg-primary/60"
 								style="width: {author.relative}%"
 							></div>
 						</div>

@@ -41,42 +41,15 @@
 	let data = $state<CausalData | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let hoverEdge = $state<{ source: string; target: string; weight: number; ci_lower: number; ci_upper: number; prob: number } | null>(null);
-	let selectedDomain = $state("all");
-
-	let domains = $state<string[]>([]);
-
-	const domainColors: Record<string, string> = {
-		cs: "#1f77b4", math: "#2ca02c", physics: "#ff7f0e",
-		astro: "#9467bd", cond: "#8c564b", hep: "#e377c2",
-		nlin: "#7f7f7f", nucl: "#bcbd22", quant: "#17becf",
-		stat: "#aec7e8", eess: "#ffbb78", econ: "#98df8a",
-	};
-
-	function domainColor(id: string): string {
-		const pref = id.split(".")[0];
-		return domainColors[pref] ?? "#a1a1aa";
-	}
+	let hoverEdge = $state<{ source: string; target: string; weight: number; prob: number } | null>(null);
 
 	onMount(async () => {
 		try {
-			const [causalRes, hierarchyRes] = await Promise.all([
-				fetch(`${base}/data/causal_edges.json`),
-				fetch(`${base}/data/category_hierarchy.json`),
-			]);
-			if (!causalRes.ok || !hierarchyRes.ok) throw new Error("Failed to load");
+			const causalRes = await fetch(`${base}/data/causal_edges.json`);
+			if (!causalRes.ok) throw new Error("Failed to load");
 			const causal: CausalData = await causalRes.json();
-			const hierarchy = await hierarchyRes.json();
-
-			const domainMap: Record<string, string> = {};
-			for (const d of hierarchy.domains ?? []) {
-				for (const sub of d.subcategories ?? []) {
-					domainMap[sub.id] = d.id;
-				}
-			}
 
 			data = causal;
-			domains = [...new Set(Object.values(domainMap))];
 		} catch (e) {
 			error = e instanceof Error ? e.message : "Failed to load";
 		} finally {
@@ -128,7 +101,6 @@
 
 		const g = d3.select(svgEl).append("g");
 
-		// Edges with hover tooltip
 		g.selectAll("line")
 			.data(links)
 			.join("line")
@@ -146,20 +118,17 @@
 					source: srcId,
 					target: tgtId,
 					weight: d.weight,
-					ci_lower: d.weight * 0.7,
-					ci_upper: d.weight * 1.3,
 					prob: d.prob,
 				};
 			})
 			.on("mouseleave", () => { hoverEdge = null; });
 
-		// Nodes
 		g.selectAll("circle")
 			.data(nodes)
 			.join("circle")
 			.attr("r", 5)
 			.attr("fill", (d: any) => d.color)
-			.attr("stroke", "var(--panel)")
+			.attr("stroke", "var(--surface-container)")
 			.attr("stroke-width", 1.5)
 			.attr("cx", (d: any) => d.x)
 			.attr("cy", (d: any) => d.y)
@@ -172,11 +141,11 @@
 	<title>Causal Trends — arXiv Explorer</title>
 </svelte:head>
 
-<div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
-	<header class="mb-8">
-		<p class="kicker mb-3">Bayesian Poisson VAR · Graph-regularized</p>
-		<h1 class="font-display text-4xl font-bold tracking-tight text-ink sm:text-5xl">Causal trends</h1>
-		<p class="mt-2 max-w-xl text-sm leading-relaxed text-soft">
+<div class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
+	<header class="mb-10 border-l-4 border-primary pl-8">
+		<p class="label-caps mb-3">Bayesian Poisson VAR · Graph-regularized</p>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Causal trends</h1>
+		<p class="mt-2 max-w-2xl font-mono text-sm text-on-surface-variant">
 			Directed edges show Granger-causal influence between arXiv categories.
 			Opacity = posterior probability, color = sign (green positive, red negative).
 			Node color = growth rate (green growing, red declining).
@@ -184,48 +153,48 @@
 	</header>
 
 	{#if loading}
-		<div class="kicker flex h-[500px] items-center justify-center animate-pulse">Loading…</div>
+		<div class="label-caps flex h-[500px] items-center justify-center gap-2">
+			<span class="live-dot animate-pulse"></span>
+			Loading…
+		</div>
 	{:else if error}
-		<div class="flex h-[500px] items-center justify-center text-sm text-accent">{error}</div>
+		<div class="flex h-[500px] items-center justify-center font-mono text-sm text-warning-red">{error}</div>
 	{:else}
-		<div class="mb-4 flex flex-wrap items-center gap-4">
-			<div class="flex items-center gap-2 text-xs text-soft">
-				<span class="inline-block h-3 w-3 rounded-full bg-green-500"></span> Growing
-				<span class="ml-3 inline-block h-3 w-3 rounded-full bg-red-500"></span> Declining
-				<span class="ml-3 inline-block h-3 w-3 rounded-full bg-gray-400"></span> Stable
-			</div>
+		<div class="mb-4 flex flex-wrap items-center gap-4 font-mono text-xs text-on-surface-variant">
+			<span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-signal-green"></span> Growing</span>
+			<span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-warning-red"></span> Declining</span>
+			<span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-full bg-outline"></span> Stable</span>
 		</div>
 
-		<div class="overflow-hidden rounded-xl border border-line bg-panel">
+		<div class="overflow-hidden border border-outline/20 bg-surface-container">
 			<svg bind:this={svgEl} class="h-[500px] w-full" role="img" aria-label="Causal category graph"></svg>
 		</div>
 
 		{#if hoverEdge}
-			<div class="mt-4 rounded-lg border border-line bg-panel p-4 text-sm">
-				<span class="font-mono text-accent">{hoverEdge.source}</span>
-				<span class="text-soft"> → </span>
-				<span class="font-mono text-accent">{hoverEdge.target}</span>
-				<div class="mt-2 grid grid-cols-3 gap-4 font-mono text-xs text-soft">
-					<div>Weight: <span class="text-ink">{hoverEdge.weight.toFixed(4)}</span></div>
-					<div>95% CI: <span class="text-ink">[{hoverEdge.ci_lower.toFixed(4)}, {hoverEdge.ci_upper.toFixed(4)}]</span></div>
-					<div>P(edge): <span class="text-ink">{hoverEdge.prob.toFixed(2)}</span></div>
+			<div class="mt-4 border border-outline/20 bg-surface-container p-4">
+				<span class="font-mono text-sm font-bold text-primary">{hoverEdge.source}</span>
+				<span class="text-on-surface-variant font-mono"> → </span>
+				<span class="font-mono text-sm font-bold text-primary">{hoverEdge.target}</span>
+				<div class="mt-2 grid grid-cols-2 gap-4 font-mono text-xs text-on-surface-variant">
+					<div>Weight: <span class="text-on-surface">{hoverEdge.weight.toFixed(4)}</span></div>
+					<div>P(edge): <span class="text-on-surface">{hoverEdge.prob.toFixed(2)}</span></div>
 				</div>
 			</div>
 		{/if}
 
-		<div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="mt-8 grid grid-cols-1 gap-px bg-outline/20 sm:grid-cols-2 lg:grid-cols-3">
 			{#each data?.categories.filter(c => c.trend > 0.01).sort((a, b) => b.trend - a.trend).slice(0, 6) as cat}
-				<a href="/trends/{cat.id}" class="rounded-lg border border-line bg-panel p-4 transition-colors hover:border-green-500/50">
-					<div class="font-mono text-xs text-accent">{cat.id}</div>
-					<div class="mt-1 font-mono text-lg text-green-600 dark:text-green-400">+{(cat.trend * 100).toFixed(2)}%</div>
-					<div class="kicker mt-1">monthly growth</div>
+				<a href="/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
+					<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+					<div class="mt-1 font-mono text-2xl font-bold text-signal-green">+{(cat.trend * 100).toFixed(2)}%</div>
+					<div class="label-caps mt-1 text-[10px]">monthly growth</div>
 				</a>
 			{/each}
 			{#each data?.categories.filter(c => c.trend < -0.01).sort((a, b) => a.trend - b.trend).slice(0, 6) as cat}
-				<a href="/trends/{cat.id}" class="rounded-lg border border-line bg-panel p-4 transition-colors hover:border-red-500/50">
-					<div class="font-mono text-xs text-accent">{cat.id}</div>
-					<div class="mt-1 font-mono text-lg text-red-600 dark:text-red-400">{(cat.trend * 100).toFixed(2)}%</div>
-					<div class="kicker mt-1">monthly growth</div>
+				<a href="/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
+					<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+					<div class="mt-1 font-mono text-2xl font-bold text-warning-red">{(cat.trend * 100).toFixed(2)}%</div>
+					<div class="label-caps mt-1 text-[10px]">monthly growth</div>
 				</a>
 			{/each}
 		</div>
