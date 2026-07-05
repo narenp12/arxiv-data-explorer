@@ -6,18 +6,19 @@
 	let subConcepts = $state<{ id: string; name: string; worksCount: number }[]>([]);
 	let works = $state<{ id: string; title: string; authors: string; year: number | null }[]>([]);
 	let loading = $state(true);
-	let worksPage = $state(1);
-	let loadingMore = $state(false);
 
 	async function loadConcept() {
 		const id = $page.params.id;
 		if (!id) return;
 
+		concept = null;
+		subConcepts = [];
+		works = [];
 		loading = true;
 		try {
 			const [conceptRes, subRes, worksRes] = await Promise.all([
 				fetch(`/api/openalex/concepts/${encodeURIComponent(id)}?select=id,display_name,description,works_count`),
-				fetch(`/api/openalex/concepts?filter=parent_ids:${encodeURIComponent(id)}&per_page=50&select=id,display_name,works_count,sort=works_count:desc`),
+				fetch(`/api/openalex/concepts?filter=parent_ids:${encodeURIComponent(id)}&per_page=50&select=id,display_name,works_count&sort=works_count:desc`),
 				fetch(`/api/openalex/works?filter=concept.id:${encodeURIComponent(id)}&per_page=25&sort=cited_by_count:desc&select=id,title,authorships,publication_year`),
 			]);
 
