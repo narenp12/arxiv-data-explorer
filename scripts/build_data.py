@@ -1,5 +1,6 @@
 import argparse
 import json
+import sqlite3
 from pathlib import Path
 
 import polars as pl
@@ -260,6 +261,60 @@ def build_author_rankings(df: pl.DataFrame) -> list[dict]:
     return result
 
 
+def build_search_db(df: pl.DataFrame, db_path: Path):
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA synchronous = OFF")
+    conn.execute("PRAGMA journal_mode = MEMORY")
+    conn.execute("PRAGMA cache_size = -8000000")
+
+    conn.execute("""
+        CREATE TABLE papers(
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            abstract TEXT,
+            authors TEXT,
+            categories TEXT,
+            date TEXT,
+            domain TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE VIRTUAL TABLE papers_fts USING fts5(
+            id UNINDEXED, title, authors,
+            tokenize='porter unicode61'
+        )
+    """)
+
+    base = df.select(
+        "id", "title", "abstract",
+        pl.col("authors").fill_null(""),
+        "categories", "update_date",
+        pl.col("categories").str.split(".").list.first().alias("domain"),
+    )
+
+    rows = []
+    fts_rows = []
+    for r in base.iter_rows(named=True):
+        rows.append((
+            r["id"], r["title"], r.get("abstract", "") or "",
+            r["authors"], r["categories"], r["update_date"], r["domain"],
+        ))
+        fts_rows.append((r["id"], r["title"], r["authors"]))
+
+    conn.executemany(
+        "INSERT INTO papers VALUES (?, ?, ?, ?, ?, ?, ?)", rows
+    )
+    conn.executemany(
+        "INSERT INTO papers_fts VALUES (?, ?, ?)", fts_rows
+    )
+    conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('optimize')")
+    conn.commit()
+    conn.close()
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -295,6 +350,12 @@ if __name__ == "__main__":
     author_rankings = build_author_rankings(df)
     (DATA_DIR / "author_rankings.json").write_text(json.dumps(author_rankings, separators=(",", ":")))
     print(f"  {len(author_rankings):,} ranked authors")
+
+    print("Building FTS5 search database\u2026")
+    db_path = DATA_DIR / "search.db"
+    build_search_db(df, db_path)
+    size_mb = db_path.stat().st_size / 1024 / 1024
+    print(f"  search.db: {size_mb:.1f} MB")
 
     df.write_parquet(DATA_DIR / "papers.parquet")
 
