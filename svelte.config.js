@@ -12,6 +12,12 @@ const config = {
       precompress: false,
       strict: true,
     }),
+    prerender: {
+      handleHttpError: ({ path }) => {
+        if (path.startsWith("/trends") || path.startsWith("/takeoffs")) return;
+        throw new Error(`${path} returned 404`);
+      },
+    },
     paths: {
       base: "",
     },
