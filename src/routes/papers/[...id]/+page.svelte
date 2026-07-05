@@ -4,6 +4,7 @@
 	import { base } from "$app/paths";
 	import { readingList } from "$lib/stores/saved.svelte";
 	import type { ConceptTag } from "$lib/types";
+	import ConceptPill from "$lib/components/ConceptPill.svelte";
 
 	function toggleSave(d: PaperDetail) {
 		readingList.toggle({
@@ -117,11 +118,17 @@
 			</p>
 
 			{#if detail.abstract}
-				<div class="mb-10 border border-outline/20 bg-surface-container p-6">
+				<div class="border border-outline/20 bg-surface-container p-6">
 					<p class="label-caps mb-3">Abstract</p>
 					<p class="font-body text-[15px] leading-[1.75] text-on-surface">
 						{detail.abstract}
 					</p>
+				</div>
+			{/if}
+
+			{#if concepts.length > 0}
+				<div class="mt-6">
+					<ConceptPill {concepts} />
 				</div>
 			{/if}
 

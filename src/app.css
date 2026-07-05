@@ -86,6 +86,7 @@
 	--color-primary-container: var(--primary-container);
 	--color-secondary: var(--secondary);
 	--color-secondary-container: var(--secondary-container);
+	--color-phantom-violet: #5e35b1;
 	--color-signal-green: var(--signal-green);
 	--color-warning-red: var(--warning-red);
 }
