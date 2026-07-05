@@ -176,7 +176,7 @@
 				selectedId = selectedId === d.id ? null : d.id;
 			})
 			.append("title")
-			.text((d) => `${d.id} · ${fmtAnnualPct(d.trend)}/yr — click to trace influence`);
+			.text((d) => `${categoryLabel(d.id)} · ${fmtAnnualPct(d.trend)}/yr — click to trace influence`);
 
 		const labelled = new Set(
 			[...lay.nodes].sort((a, b) => b.vol - a.vol).slice(0, 16).map((n) => n.id),
@@ -198,7 +198,7 @@
 			.attr("font-weight", "700")
 			.attr("fill", (d) => (inFocus(d.id) ? "var(--on-surface-variant)" : "var(--outline-variant)"))
 			.attr("pointer-events", "none")
-			.text((d) => d.id);
+			.text((d) => { const l = categoryLabel(d.id); return l.length > 20 ? l.slice(0, 18) + '…' : l; });
 
 		svg.on("click", () => { selectedId = null; });
 
@@ -225,9 +225,9 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 border-l-4 border-primary pl-8">
+	<header class="mb-10">
 		<p class="label-caps mb-3">Poisson-lag Granger regression · Graph-restricted</p>
-		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Causal trends</h1>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Causal trends</h1>
 		<p class="mt-2 max-w-2xl font-mono text-sm text-on-surface-variant">
 			Arrows show lagged influence between categories. Click a node to trace
 			what drives it — and what it drives. Node size = publication volume,
@@ -237,8 +237,7 @@
 
 	{#if loading}
 		<div class="label-caps flex h-[500px] items-center justify-center gap-2">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading graph…
 		</div>
 	{:else if error}
 		<div class="flex h-[500px] items-center justify-center font-mono text-sm text-warning-red">{error}</div>
@@ -291,7 +290,9 @@
 						<p class="label-caps mb-1.5">Driven by ({selectedIn.length})</p>
 						{#each selectedIn.slice(0, 5) as e}
 							<div class="flex justify-between py-0.5">
-								<a href="{base}/trends/{e.source}" class="text-on-surface transition-colors hover:text-primary">{e.source}</a>
+								<a href="{base}/trends/{e.source}" class="text-on-surface transition-colors hover:text-primary">
+									{e.source}<span class="ml-1.5 font-mono text-[10px] text-outline">{categoryLabel(e.source)}</span>
+								</a>
 								<span class:text-signal-green={e.weight > 0} class:text-warning-red={e.weight < 0}>{e.weight > 0 ? "+" : ""}{e.weight.toFixed(2)}</span>
 							</div>
 						{:else}
@@ -302,7 +303,9 @@
 						<p class="label-caps mb-1.5">Drives ({selectedOut.length})</p>
 						{#each selectedOut.slice(0, 5) as e}
 							<div class="flex justify-between py-0.5">
-								<a href="{base}/trends/{e.target}" class="text-on-surface transition-colors hover:text-primary">{e.target}</a>
+								<a href="{base}/trends/{e.target}" class="text-on-surface transition-colors hover:text-primary">
+									{e.target}<span class="ml-1.5 font-mono text-[10px] text-outline">{categoryLabel(e.target)}</span>
+								</a>
 								<span class:text-signal-green={e.weight > 0} class:text-warning-red={e.weight < 0}>{e.weight > 0 ? "+" : ""}{e.weight.toFixed(2)}</span>
 							</div>
 						{:else}
@@ -314,8 +317,10 @@
 		{:else if hoverEdge}
 			<div class="mt-4 border border-outline/20 bg-surface-container p-4">
 				<span class="font-mono text-sm font-bold text-primary">{hoverEdge.source}</span>
+				<span class="ml-1 font-mono text-[10px] text-outline">{categoryLabel(hoverEdge.source)}</span>
 				<span class="text-on-surface-variant font-mono"> → </span>
 				<span class="font-mono text-sm font-bold text-primary">{hoverEdge.target}</span>
+				<span class="ml-1 font-mono text-[10px] text-outline">{categoryLabel(hoverEdge.target)}</span>
 				<div class="mt-2 grid grid-cols-2 gap-4 font-mono text-xs text-on-surface-variant">
 					<div>Lag coefficient: <span class="text-on-surface">{hoverEdge.weight.toFixed(3)}</span></div>
 					<div>Confidence: <span class="text-on-surface">{hoverEdge.prob.toFixed(2)}</span></div>

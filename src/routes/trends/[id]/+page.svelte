@@ -136,8 +136,8 @@
 </script>
 
 <svelte:head>
-	<title>{$page.params.id ?? "Category"} — arXiv Explorer</title>
-	<meta name="description" content="Monthly submission dynamics and causal drivers for arXiv category {$page.params.id}." />
+	<title>{categoryLabel($page.params.id ?? "")} ({$page.params.id ?? "Category"}) — arXiv Explorer</title>
+	<meta name="description" content="Monthly submission dynamics and causal drivers for {categoryLabel($page.params.id ?? "")} (arXiv {$page.params.id})." />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
@@ -145,8 +145,7 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-20">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading dynamics…
 		</div>
 	{:else if error}
 		<div class="py-20 text-center">
@@ -155,10 +154,10 @@
 			<a href="{base}/trends" class="label-caps mt-4 inline-block text-primary underline underline-offset-4 decoration-primary/30">← Back to trends</a>
 		</div>
 	{:else}
-		<header class="mb-8 flex flex-wrap items-end justify-between gap-4 border-l-4 border-primary pl-8">
+		<header class="mb-8 flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p class="label-caps mb-3">Category dynamics · since {startMonth}</p>
-				<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">{$page.params.id}</h1>
+				<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">{$page.params.id}</h1>
 				<p class="mt-0.5 font-mono text-sm text-on-surface-variant">{categoryLabel($page.params.id ?? "")}</p>
 				{#if detail}
 					<p class="mt-2 font-mono text-sm text-on-surface-variant">
@@ -190,7 +189,7 @@
 				{/if}
 			</div>
 			<div class="mb-10 border border-outline/20 bg-surface-container p-4">
-				<svg bind:this={chartSvg} class="h-[280px] w-full" role="img" aria-label="Monthly submissions for {$page.params.id}"></svg>
+				<svg bind:this={chartSvg} class="h-[280px] w-full" role="img" aria-label="Monthly submissions for {categoryLabel($page.params.id ?? '')} ({$page.params.id})"></svg>
 			</div>
 		{/if}
 

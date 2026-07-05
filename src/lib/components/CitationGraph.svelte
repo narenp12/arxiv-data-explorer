@@ -14,9 +14,8 @@
 	let svgEl = $state<SVGSVGElement | undefined>();
 	let containerEl = $state<HTMLDivElement | undefined>();
 	let loading = $state(true);
-	let timedOut = $state(false);
 	let hasData = $state(false);
-	let collapsed = $state(true);
+	let collapsed = $state(false);
 
 	interface GraphNode extends d3.SimulationNodeDatum {
 		id: string;
@@ -33,14 +32,6 @@
 	}
 
 	onMount(async () => {
-		const TIMEOUT_MS = 3000;
-		const controller = new AbortController();
-		const timer = setTimeout(() => {
-			controller.abort();
-			timedOut = true;
-			loading = false;
-		}, TIMEOUT_MS);
-
 		try {
 			const id = openalexWorkId ?? arxivId;
 			if (!id) { loading = false; return; }
@@ -50,14 +41,13 @@
 				fetchCitations(id, 15),
 			]);
 
-			clearTimeout(timer);
-
 			if (refs.length === 0 && cites.length === 0) {
 				loading = false;
 				return;
 			}
 
 			hasData = true;
+			loading = false;
 
 			const nodeMap = new Map<string, GraphNode>();
 			const links: GraphLink[] = [];
@@ -108,23 +98,26 @@
 				.attr("orient", "auto")
 				.append("path")
 				.attr("d", "M0,-5L10,0L0,5")
-				.attr("fill", "var(--color-primary, #00dbe7)");
+				.attr("fill", "var(--color-primary)");
 
 			const simulation = d3.forceSimulation<GraphNode>(nodes)
 				.force("link", d3.forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(100))
 				.force("charge", d3.forceManyBody().strength(-200))
-				.force("center", d3.forceCenter(width / 2, height / 2));
+				.force("center", d3.forceCenter(width / 2, height / 2))
+				.force("collision", d3.forceCollide().radius(20));
 
-			const link = svg.append("g")
+			const root = svg.append("g");
+
+			const link = root.append("g")
 				.selectAll("line")
 				.data(links)
 				.join("line")
-				.attr("stroke", "var(--color-outline-dim, #3a494b)")
+				.attr("stroke", "var(--color-outline)")
 				.attr("stroke-width", 1)
 				.attr("stroke-opacity", 0.5)
 				.attr("marker-end", `url(#${markerId})`);
 
-			const node = svg.append("g")
+			const node = root.append("g")
 				.selectAll("g")
 				.data(nodes)
 				.join("g")
@@ -141,8 +134,8 @@
 
 			node.append("circle")
 				.attr("r", (d) => d.isCenter ? 10 : Math.max(3, Math.sqrt(d.citationCount) * 0.8))
-				.attr("fill", (d) => d.isCenter ? "var(--color-primary, #00dbe7)" : "var(--color-phantom-violet, #d0bcff)")
-				.attr("stroke", "var(--color-surface-container, #181818)")
+				.attr("fill", (d) => d.isCenter ? "var(--color-primary)" : "var(--color-secondary)")
+				.attr("stroke", "var(--color-surface-container)")
 				.attr("stroke-width", 1.5);
 
 			node.append("title")
@@ -153,7 +146,7 @@
 				.attr("x", 12)
 				.attr("y", 4)
 				.attr("font-size", "10px")
-				.attr("fill", "var(--color-secondary, #b9cacb)");
+				.attr("fill", "var(--color-on-surface-variant)");
 
 			simulation.on("tick", () => {
 				link
@@ -164,10 +157,12 @@
 				node.attr("transform", (d) => `translate(${d.x},${d.y})`);
 			});
 
+			const zoom = d3.zoom<SVGSVGElement, unknown>()
+				.scaleExtent([0.5, 6])
+				.on("zoom", (e) => root.attr("transform", e.transform));
+			d3.select(svgEl).call(zoom);
+
 		} catch {
-			clearTimeout(timer);
-			if (!controller.signal.aborted) timedOut = true;
-		} finally {
 			loading = false;
 		}
 	});
@@ -176,7 +171,7 @@
 <div bind:this={containerEl} class="mt-4">
 	<button
 		onclick={() => collapsed = !collapsed}
-		class="flex w-full items-center gap-2 rounded border border-outline-dim bg-surface-container px-4 py-2 text-left text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-hover"
+		class="flex w-full items-center gap-2 rounded border border-outline bg-surface-container px-4 py-2 text-left text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-hover"
 	>
 		<span class="text-xs transition-transform {collapsed ? '' : 'rotate-90'}">▸</span>
 		Citation Graph
@@ -184,16 +179,13 @@
 
 	{#if !collapsed}
 		{#if loading}
-			<div class="flex items-center gap-2 text-secondary py-4">
-				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+			<div class="flex items-center gap-2 text-on-surface-variant py-4">
 				<span class="text-sm">Loading citation graph…</span>
 			</div>
-		{:else if timedOut}
-			<p class="text-xs text-secondary py-4">Citation graph timed out. Data is available in the tabular views above.</p>
 		{:else if !hasData}
-			<p class="text-sm text-secondary py-4">No citation data available.</p>
+			<p class="text-sm text-on-surface-variant py-4">No citation data available.</p>
 		{:else}
-			<svg bind:this={svgEl} class="h-[350px] w-full rounded border border-outline-dim bg-surface-container"></svg>
+			<svg bind:this={svgEl} class="h-[350px] w-full rounded border border-outline bg-surface-container" role="img" aria-label="Citation network: center node is this paper, connected to references and citations. Click a node to navigate."></svg>
 		{/if}
 	{/if}
 </div>

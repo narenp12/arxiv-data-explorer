@@ -65,9 +65,8 @@
 		{#if !activeTab}
 			<p class="text-xs text-secondary py-4">Select a tab to load related papers.</p>
 		{:else if loading}
-			<div class="flex items-center gap-2 text-secondary py-4">
-				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-				<span class="text-sm">Loading…</span>
+			<div class="flex items-center py-4">
+				<span class="text-sm text-secondary">Loading…</span>
 			</div>
 		{:else}
 			{@const currentData = TABS.find((t) => t.id === activeTab)?.data ?? []}

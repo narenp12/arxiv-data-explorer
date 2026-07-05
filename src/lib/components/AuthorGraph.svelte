@@ -8,9 +8,57 @@
 	interface AuthEdge { source: string; target: string; weight: number; }
 	interface Top80Graph { nodes: AuthNode[]; edges: AuthEdge[]; }
 
-	interface DispNode extends d3.SimulationNodeDatum { id: string; label: string; weight: number; }
+	interface DispNode extends d3.SimulationNodeDatum { id: string; label: string; weight: number; cluster: number; }
+
+	const CLUSTER_COLORS = [
+		"var(--primary)",
+		"var(--secondary)",
+		"#d97706",
+		"#059669",
+		"#7c3aed",
+	];
+
+	function assignClusters(nodes: AuthNode[], edges: AuthEdge[]): number[] {
+		const adj = new Map<string, string[]>();
+		for (const n of nodes) adj.set(n.id, []);
+		for (const e of edges) {
+			adj.get(e.source)?.push(e.target);
+			adj.get(e.target)?.push(e.source);
+		}
+		const visited = new Set<string>();
+		const cluster = new Map<string, number>();
+		let ci = 0;
+		for (const n of nodes) {
+			if (visited.has(n.id)) continue;
+			const queue = [n.id];
+			visited.add(n.id);
+			for (let i = 0; i < queue.length; i++) {
+				cluster.set(queue[i], ci);
+				for (const nb of adj.get(queue[i]) ?? []) {
+					if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
+				}
+			}
+			ci++;
+		}
+
+		if (ci === 1) {
+			const degrees = new Map<string, number>();
+			for (const e of edges) {
+				degrees.set(e.source, (degrees.get(e.source) ?? 0) + 1);
+				degrees.set(e.target, (degrees.get(e.target) ?? 0) + 1);
+			}
+			const sorted = [...nodes].sort((a, b) => (degrees.get(b.id) ?? 0) - (degrees.get(a.id) ?? 0));
+			const perBucket = Math.max(1, Math.ceil(sorted.length / CLUSTER_COLORS.length));
+			for (let i = 0; i < sorted.length; i++) {
+				cluster.set(sorted[i].id, Math.min(Math.floor(i / perBucket), CLUSTER_COLORS.length - 1));
+			}
+		}
+
+		return nodes.map((n) => cluster.get(n.id) ?? 0);
+	}
 
 	let svgEl = $state<SVGSVGElement>();
+	let containerEl = $state<HTMLDivElement>();
 	let data = $state<Top80Graph | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -27,19 +75,18 @@
 		}
 	});
 
-	// Render once both the data and the <svg> exist — the svg only mounts
-	// after `loading` flips, so rendering straight from onMount finds no element.
 	$effect(() => {
 		if (!data || !svgEl) return;
-		renderGraph($state.snapshot(data) as Top80Graph, svgEl);
+		const w = svgEl.clientWidth || containerEl?.clientWidth || 800;
+		const h = Math.max(400, Math.min(600, w * 0.55));
+		renderGraph($state.snapshot(data) as Top80Graph, svgEl, w, h);
 	});
 
-	function renderGraph(graph: Top80Graph, svg: SVGSVGElement) {
-		const w = svg.clientWidth || 800;
-		const h = 400;
+	function renderGraph(graph: Top80Graph, svg: SVGSVGElement, w: number, h: number) {
+		const clusters = assignClusters(graph.nodes, graph.edges);
 		svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 		d3.select(svg).selectAll("*").remove();
-		const nodes: DispNode[] = graph.nodes.map((n) => ({ ...n }));
+		const nodes: DispNode[] = graph.nodes.map((n, i) => ({ ...n, cluster: clusters[i] }));
 		const edges = graph.edges.map((e) => ({ ...e }));
 		const sim = d3.forceSimulation<DispNode>(nodes)
 			.force("link", d3.forceLink(edges).id((d: any) => d.id).distance(50).strength(0.3))
@@ -49,41 +96,49 @@
 			.stop();
 		const ticks = Math.ceil(Math.log(sim.alphaMin()) / Math.log(1 - sim.alphaDecay()));
 		sim.tick(ticks);
-		const g = d3.select(svg).append("g");
-		g.selectAll("line").data(edges).join("line")
-			.attr("stroke", "var(--outline)").attr("stroke-width", 0.3).attr("stroke-opacity", 0.3)
+		const root = d3.select(svg).append("g");
+		root.selectAll("line").data(edges).join("line")
+			.attr("stroke", "var(--outline)")
+			.attr("stroke-width", (d: any) => Math.max(0.2, Math.log((d as AuthEdge).weight) / 4))
+			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
 			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
+		const maxW = Math.max(...graph.nodes.map((n) => n.weight));
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
-		g.selectAll("circle").data(nodes).join("circle")
+		root.selectAll("circle").data(nodes).join("circle")
 			.attr("r", radius)
-			.attr("fill", "var(--primary)").attr("fill-opacity", 0.5)
-			.attr("stroke", "var(--primary-container)").attr("stroke-width", 0.5)
+			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
+			.attr("fill-opacity", (d: any) => 0.35 + (d.weight / maxW) * 0.45)
+			.attr("stroke", "var(--surface-container)")
+			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
 			.on("click", (_e: MouseEvent, d: any) => goto(`/authors/${encodeURIComponent(d.id)}`))
 			.append("title").text((d: any) => `${d.label} (${d.weight} papers)`);
 
-		// Label the dozen most prolific nodes so the graph reads as data, not decoration.
 		const labelled = [...nodes].sort((a, b) => b.weight - a.weight).slice(0, 12);
-		g.selectAll("text").data(labelled).join("text")
+		root.selectAll("text").data(labelled).join("text")
 			.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - radius(d) - 3)
 			.attr("text-anchor", "middle")
 			.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
 			.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
 			.text((d: any) => d.label);
+
+		const zoom = d3.zoom<SVGSVGElement, unknown>()
+			.scaleExtent([0.5, 6])
+			.on("zoom", (e) => root.attr("transform", e.transform));
+		d3.select(svg).call(zoom);
 	}
 </script>
 
 {#if loading}
-	<div class="label-caps flex h-[400px] items-center justify-center gap-2">
-		<span class="live-dot animate-pulse"></span>
+	<div bind:this={containerEl} class="label-caps flex h-[450px] items-center justify-center gap-2">
 		Loading network…
 	</div>
 {:else if error}
-	<div class="flex h-[400px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
+	<div class="flex h-[450px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
 {:else if data}
-	<div class="overflow-hidden border border-outline/20 bg-surface-container">
-		<svg bind:this={svgEl} class="h-[400px] w-full" role="img" aria-label="Co-authorship network graph — click a node to open the author"></svg>
+	<div bind:this={containerEl} class="overflow-hidden border border-outline/20 bg-surface-container">
+		<svg bind:this={svgEl} class="h-[450px] w-full" role="img" aria-label="Co-authorship network graph — click a node to open the author"></svg>
 	</div>
 {/if}

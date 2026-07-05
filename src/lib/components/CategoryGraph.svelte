@@ -94,7 +94,6 @@
     node.append("title")
       .text((d) => `${d.label} (${d.weight.toLocaleString()} papers) — view trend`);
 
-    // Label the heaviest nodes so the map is readable without hovering
     const top = [...graph.nodes].sort((a, b) => b.weight - a.weight).slice(0, 14);
     root.append("g")
       .selectAll("text")
@@ -108,7 +107,7 @@
       .attr("font-weight", "700")
       .attr("fill", "var(--on-surface-variant)")
       .attr("pointer-events", "none")
-      .text((d) => d.id);
+      .text((d) => d.label);
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.5, 6])
@@ -120,7 +119,6 @@
 <div bind:this={containerEl} class="w-full">
   {#if loading}
     <div class="label-caps flex h-[450px] items-center justify-center gap-2">
-      <span class="live-dot animate-pulse"></span>
       Loading graph…
     </div>
   {:else if error}

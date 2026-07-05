@@ -29,9 +29,9 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 border-l-4 border-primary pl-8">
-		<p class="label-caps mb-3">Co-authorship networks</p>
-		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Authors</h1>
+	<header class="mb-10">
+		<p class="label-caps mb-3">Top 50k · co-authorship graph</p>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Authors</h1>
 		<p class="mt-2 max-w-xl font-mono text-sm text-on-surface-variant">
 			{loading ? "Loading signal…" : `${authors.length.toLocaleString()} most prolific authors in the corpus`}
 		</p>
@@ -50,8 +50,7 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-16">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading graph…
 		</div>
 	{:else}
 		<div class="divide-y divide-outline/20 border-t border-outline/30">

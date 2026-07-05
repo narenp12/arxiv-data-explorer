@@ -3,9 +3,9 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 border-l-4 border-primary pl-8">
+	<header class="mb-10">
 		<p class="label-caps mb-3">Colophon</p>
-		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">About</h1>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">About</h1>
 	</header>
 
 	<div class="space-y-6 font-mono text-sm leading-relaxed text-on-surface-variant">

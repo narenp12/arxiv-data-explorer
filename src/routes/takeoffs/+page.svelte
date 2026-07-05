@@ -80,10 +80,10 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 flex flex-wrap items-end justify-between gap-4 border-l-4 border-primary pl-8">
+	<header class="mb-10 flex flex-wrap items-end justify-between gap-4">
 		<div>
 			<p class="label-caps mb-3">Annual growth · {data?.categories.length ?? "?"} categories</p>
-			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Takeoffs</h1>
+			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Takeoffs</h1>
 		</div>
 		<select
 			value={domainFilter}
@@ -99,8 +99,7 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-16">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading growth data…
 		</div>
 	{:else if error}
 		<div class="py-16 text-center font-mono text-sm text-warning-red">{error}</div>

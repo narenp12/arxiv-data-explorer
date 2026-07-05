@@ -67,12 +67,14 @@
 
 <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
 	<!-- Hero — left-aligned asymmetric -->
-	<header class="mb-16 border-l-4 border-primary pl-8">
+	<header class="mb-16">
 		<p class="label-caps mb-4 flex items-center gap-2">
-			<span class="live-dot animate-pulse"></span>
+			<span class="inline-flex h-2 w-2 items-center justify-center">
+				<span class="inline-block h-1 w-1 bg-primary/70"></span>
+			</span>
 			ARXIV METADATA · 1991 → {new Date().getFullYear()}
 		</p>
-		<h1 class="font-display max-w-4xl text-[clamp(2.5rem,5vw,4rem)] leading-[1.04] font-bold tracking-tight text-on-surface">
+		<h1 class="font-display max-w-4xl text-[clamp(2.5rem,5vw,4rem)] leading-[1.04] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">
 			The shape of <span class="text-primary italic">science</span>,<br />one paper at a time.
 		</h1>
 		<p class="mt-6 max-w-2xl font-body text-sm leading-relaxed text-on-surface-variant">

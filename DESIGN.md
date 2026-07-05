@@ -63,11 +63,13 @@ The aesthetic is dark-first (Obsidian & Neon Ink) with a secondary light theme (
 
 - **Sidebar:** Fixed left 56px (w-14) navigation with flat icon buttons. No "INSTRUMENT" label, no "UNIT 01" decoration, no pulsing status dot. Dominant color only for active state.
 - **Content Width:** `max-w-6xl` (1152px) for main pages, `max-w-4xl` (896px) for detail pages, `max-w-3xl` (768px) for text-heavy pages (About).
-- **Page Headers:** Left-aligned with 4px Ion Blue border-left accent. `label-caps` subtitle + Playfair Display H1. No extra decorative elements.
+- **Page Headers:** Left-aligned with `label-caps` subtitle + Playfair Display H1. A 2px Ion Blue bottom-border on the H1 anchors the title without the former 4px left-border — cleaner, less repetitive across pages.
 - **Responsive:** Single-column collapse below 768px. Sidebar becomes bottom nav on mobile.
 - **Section Separation:** 1px solid borders (outline at 20-30% opacity) between sections.
 - **Spacing:** Consistent `py-14` top padding for pages, `mb-10` for headers.
 - **No decorative overlays:** No scanlines, no crosshair grids, no dot-matrix backgrounds on content areas. Visual interest comes from the data (graphs, tables, charts) and the dark/light surface hierarchy.
+
+- **animate:flip:** Svelte's built-in list-reorder animation is used on the Compare page category chips — when a category is added or removed, remaining chips slide smoothly to their new positions. Restrained to 300ms `quintOut` easing, only on user interaction.
 
 ## 6. Motion & Interaction
 

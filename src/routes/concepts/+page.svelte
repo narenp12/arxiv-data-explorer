@@ -32,7 +32,6 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center gap-2 py-8">
-			<span class="live-dot animate-pulse"></span>
 			Loading concepts…
 		</div>
 	{:else if topConcepts.length === 0}

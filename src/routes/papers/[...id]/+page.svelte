@@ -72,7 +72,6 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-20">
-			<span class="live-dot animate-pulse"></span>
 			Loading paper details…
 		</div>
 	{:else if error}

@@ -55,9 +55,9 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 border-l-4 border-primary pl-8">
+	<header class="mb-10">
 		<p class="label-caps mb-3">Taxonomy of the corpus</p>
-		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Categories</h1>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Categories</h1>
 		<p class="mt-2 max-w-xl font-mono text-sm text-on-surface-variant">
 			{data
 				? `${data.domains.length} domains · ${data.total_categories} categories · ${data.total_papers.toLocaleString()} papers`
@@ -67,8 +67,7 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-16">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading signal…
 		</div>
 	{:else if data}
 		<div class="space-y-px">

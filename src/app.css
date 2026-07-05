@@ -193,11 +193,6 @@
 	box-shadow: 0 0 10px rgba(208, 188, 255, 0.2), inset 0 0 5px rgba(208, 188, 255, 0.05);
 }
 
-/* Pulsing glow dot for live/active indicators */
-@utility live-dot {
-	@apply w-2 h-2 rounded-full bg-primary;
-	box-shadow: 0 0 8px var(--primary);
-}
 
 /*
  * ── Animations ─────────────────────────────────

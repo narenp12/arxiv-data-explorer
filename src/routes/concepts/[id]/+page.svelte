@@ -82,15 +82,14 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center gap-2 py-8">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading concept…
 		</div>
 	{:else if !concept}
 		<p class="font-mono text-sm text-on-surface-variant">Concept not found.</p>
 	{:else}
-		<header class="mb-8 border-l-4 border-primary pl-8">
-			<p class="label-caps mb-3">Concept</p>
-			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">
+		<header class="mb-8">
+			<p class="label-caps mb-3">Concept detail</p>
+			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">
 				{concept.name}
 			</h1>
 			{#if concept.description}

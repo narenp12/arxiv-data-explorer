@@ -4,6 +4,10 @@
 	import { base } from "$app/paths";
 	import { replaceState } from "$app/navigation";
 	import * as d3 from "d3";
+	import { flip } from "svelte/animate";
+	import { quintOut } from "svelte/easing";
+	import { fly } from "svelte/transition";
+	import { categoryLabel } from "$lib/utils/categories";
 	import { fmtAnnualPct, monthDate, type CausalData, type DynamicsData } from "$lib/utils/trends";
 
 	const COLORS = ["var(--primary)", "var(--secondary)", "var(--signal-green)", "var(--warning-red)", "var(--outline)"];
@@ -148,24 +152,23 @@
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
 	<a href="{base}/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
 
-	<header class="mb-10 border-l-4 border-primary pl-8">
+	<header class="mb-10">
 		<p class="label-caps mb-3">Overlay · up to {MAX_SERIES} categories</p>
-		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Compare</h1>
+		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Compare</h1>
 	</header>
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-20">
-			<span class="live-dot animate-pulse"></span>
-			Loading…
+			Loading data…
 		</div>
 	{:else if error}
 		<div class="py-20 text-center font-mono text-sm text-warning-red">{error}</div>
 	{:else if dynamics}
 		<div class="mb-6 flex flex-wrap items-center gap-2">
-			{#each selected as id, i}
-				<span class="inline-flex items-center gap-2 border border-outline/30 bg-surface-container px-3 py-1.5 font-mono text-xs font-bold text-on-surface">
+			{#each selected as id, i (id)}
+				<span animate:flip={{ duration: 300, easing: quintOut }} class="inline-flex items-center gap-2 border border-outline/30 bg-surface-container px-3 py-1.5 font-mono text-xs font-bold text-on-surface">
 					<span class="h-2 w-2 rounded-full" style="background: {COLORS[i % COLORS.length]}"></span>
-					{id}
+					{id}<span class="ml-0.5 font-normal text-outline">{categoryLabel(id)}</span>
 					{#if trendOf(id) !== null}
 						<span class="font-normal text-on-surface-variant">{fmtAnnualPct(trendOf(id)!)}/yr</span>
 					{/if}
@@ -182,10 +185,11 @@
 					/>
 					{#if suggestions.length > 0}
 						<ul class="absolute top-full left-0 z-20 mt-1 w-48 border border-outline/30 bg-surface-container shadow-lg">
-							{#each suggestions as s}
-								<li>
+							{#each suggestions as s (s)}
+								<li in:fly={{ y: -4, duration: 120, easing: quintOut }}>
 									<button onclick={() => add(s)} class="w-full px-3 py-1.5 text-left font-mono text-xs text-on-surface transition-colors hover:bg-surface-container-high hover:text-primary">
-										{s}
+										<div>{s}</div>
+										<div class="text-[10px] text-outline">{categoryLabel(s)}</div>
 									</button>
 								</li>
 							{/each}
@@ -212,10 +216,13 @@
 			<div class="mt-3 flex min-h-8 flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-on-surface-variant">
 				{#if cursor}
 					<span class="label-caps">{monthDate(dynamics.meta.start, cursor.idx).toLocaleDateString("en", { year: "numeric", month: "short" })}</span>
-					{#each selected as id, i}
-						<span class="inline-flex items-center gap-1.5">
+					{#each selected as id, i (id)}
+						<span animate:flip={{ duration: 300, easing: quintOut }} class="inline-flex items-center gap-1.5">
 							<span class="h-2 w-2 rounded-full" style="background: {COLORS[i % COLORS.length]}"></span>
-							{id}: <span class="font-bold text-on-surface">{(dynamics.series[id]?.[cursor.idx] ?? 0).toLocaleString()}</span>
+							<span class="flex flex-col leading-tight">
+								<span>{categoryLabel(id)}</span>
+								<span class="text-outline">{id}: <span class="font-bold text-on-surface">{(dynamics.series[id]?.[cursor.idx] ?? 0).toLocaleString()}</span></span>
+							</span>
 						</span>
 					{/each}
 				{:else}

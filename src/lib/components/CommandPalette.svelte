@@ -39,7 +39,7 @@
 				const hier = await hierRes.json();
 				for (const d of hier.domains ?? []) {
 					for (const sub of d.subcategories ?? []) {
-						cats.push({ label: sub.id, hint: sub.label, href: `/trends/${sub.id}` });
+						cats.push({ label: sub.label, hint: sub.id, href: `/trends/${sub.id}` });
 					}
 				}
 			}

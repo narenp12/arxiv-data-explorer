@@ -19,10 +19,10 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
-	<header class="mb-10 flex flex-wrap items-end justify-between gap-4 border-l-4 border-primary pl-8">
+	<header class="mb-10 flex flex-wrap items-end justify-between gap-4">
 		<div>
 			<p class="label-caps mb-3">Reading list · stored in this browser</p>
-			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Saved papers</h1>
+			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Saved papers</h1>
 		</div>
 		{#if readingList.papers.length > 0}
 			<button

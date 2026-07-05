@@ -1,15 +1,12 @@
 <script lang="ts">
 	import { page } from "$app/stores";
 	import { base } from "$app/paths";
-	import * as d3 from "d3";
 	import type { AuthorProfile } from "$lib/types";
 	import { fetchAuthorProfile } from "$lib/utils/openalex";
 
 	let profile = $state<AuthorProfile | null>(null);
 	let loading = $state(true);
 
-	interface AuthNode { id: string; label: string; weight: number; }
-	interface DispNode extends d3.SimulationNodeDatum { id: string; label: string; weight: number; }
 	interface AuthorShardEntry { w: number; co: [string, number][]; }
 	type AuthorShard = Record<string, AuthorShardEntry>;
 	const SHARD_COUNT = 64;
@@ -23,11 +20,9 @@
 		return h;
 	}
 
-	let graphAuthor = $state<AuthNode | null>(null);
+	let graphAuthor = $state<{ label: string; weight: number } | null>(null);
 	let coauthors = $state<{ name: string; weight: number }[]>([]);
 	let graphError = $state<string | null>(null);
-	let svgEl = $state<SVGSVGElement>();
-	let showGraph = $state(false);
 
 	let requestSeq = 0;
 
@@ -40,7 +35,6 @@
 		graphAuthor = null;
 		coauthors = [];
 		graphError = null;
-		showGraph = false;
 
 		fetchAuthorProfile(id).then((p) => {
 			if (seq !== requestSeq) return;
@@ -61,9 +55,8 @@
 					if (key) { matchedName = key; entry = data[key]; }
 				}
 				if (!entry || !matchedName) { graphError = "Author not found"; return; }
-				graphAuthor = { id, label: matchedName, weight: entry.w };
+				graphAuthor = { label: matchedName, weight: entry.w };
 				coauthors = entry.co.slice(0, 20).map(([coName, weight]) => ({ name: coName, weight }));
-				showGraph = true;
 			});
 		}).catch(() => {
 			if (seq !== requestSeq) return;
@@ -72,46 +65,6 @@
 			if (seq === requestSeq) loading = false;
 		});
 	});
-
-	$effect(() => {
-		if (!graphAuthor || !svgEl) return;
-		renderMiniGraph(graphAuthor.label, coauthors);
-	});
-
-	function renderMiniGraph(centerId: string, coauthorsList: { name: string; weight: number }[]) {
-		if (!svgEl) return;
-		const w = svgEl.clientWidth || 600;
-		const h = 260;
-		svgEl.setAttribute("viewBox", `0 0 ${w} ${h}`);
-		d3.select(svgEl).selectAll("*").remove();
-		const nodes: DispNode[] = [
-			{ id: centerId, label: centerId, weight: 1 },
-			...coauthorsList.map((c) => ({ id: c.name, label: c.name, weight: c.weight })),
-		];
-		const edges = coauthorsList.map((c) => ({ source: centerId, target: c.name, weight: c.weight }));
-		const sim = d3.forceSimulation(nodes.map((n) => ({ ...n })))
-			.force("link", d3.forceLink(edges).id((d: any) => d.id).distance(60).strength(0.5))
-			.force("charge", d3.forceManyBody().strength(-40))
-			.force("center", d3.forceCenter(w / 2, h / 2))
-			.force("collision", d3.forceCollide().radius(5))
-			.stop();
-		const ticks = Math.ceil(Math.log(sim.alphaMin()) / Math.log(1 - sim.alphaDecay()));
-		sim.tick(ticks);
-		const g = d3.select(svgEl).append("g");
-		g.selectAll("line").data(edges).join("line")
-			.attr("stroke", "var(--outline)").attr("stroke-width", 0.5).attr("stroke-opacity", 0.4)
-			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
-			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
-		g.selectAll("circle").data(nodes).join("circle")
-			.attr("r", (d: any) => d.id === centerId ? 8 : Math.max(2, Math.min(6, Math.sqrt(d.weight) * 0.08)))
-			.attr("fill", (d: any) => d.id === centerId ? "var(--primary)" : "var(--secondary)")
-			.attr("fill-opacity", 0.6).attr("stroke", "var(--primary-container)").attr("stroke-width", 0.5)
-			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
-			.append("title").text((d: any) => {
-				const suffix = d.id === centerId ? "" : " (" + d.weight + " collaborations)";
-				return d.label + suffix;
-			});
-	}
 </script>
 
 <svelte:head>
@@ -123,27 +76,17 @@
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-20">
-			<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-			Loading…
+			Loading author…
 		</div>
 	{:else if !profile && !graphAuthor}
-		{#if graphError === "Author not found"}
-			<div class="py-20 text-center">
-				<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
-				<p class="label-caps mt-2">Author not found.</p>
-			</div>
-		{:else if graphError}
-			<div class="py-20 text-center">
-				<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
-				<p class="label-caps mt-2">{graphError}</p>
-			</div>
-		{:else}
-			<p class="text-secondary text-sm">Author not found.</p>
-		{/if}
+		<div class="py-20 text-center">
+			<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
+			<p class="label-caps mt-2">{graphError ?? "Author not found."}</p>
+		</div>
 	{:else if profile}
-		<header class="mb-8 border-l-4 border-primary pl-8">
+		<header class="mb-8">
 			<p class="label-caps mb-3 text-secondary">Author profile</p>
-			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">
+			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">
 				{profile.name}
 			</h1>
 			{#if profile.orcid}
@@ -236,18 +179,14 @@
 			{/if}
 		</section>
 	{:else if graphAuthor}
-		<header class="mb-8 border-l-4 border-primary pl-8">
+		<header class="mb-8">
 			<p class="label-caps mb-3">Author profile</p>
-			<h1 class="font-display text-[clamp(1.5rem,3vw,2.5rem)] font-bold tracking-tight text-on-surface">{graphAuthor.label}</h1>
+			<h1 class="font-display text-[clamp(1.5rem,3vw,2.5rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">{graphAuthor.label}</h1>
 			<p class="mt-2 font-mono text-sm text-on-surface-variant">
 				{graphAuthor.weight.toLocaleString()} papers in the corpus
 				· <a href="{base}/papers?q={encodeURIComponent(graphAuthor.label)}" class="text-primary underline underline-offset-4 decoration-primary/30">Search papers →</a>
 			</p>
 		</header>
-
-		<div class="mb-8 overflow-hidden border border-outline/20 bg-surface-container">
-			<svg bind:this={svgEl} class="h-[260px] w-full" role="img" aria-label="Co-authorship subgraph"></svg>
-		</div>
 
 		{#if coauthors.length > 0}
 			<section>
