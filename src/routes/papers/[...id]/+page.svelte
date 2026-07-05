@@ -2,6 +2,17 @@
 	import { page } from "$app/stores";
 	import { getPaperDetail, type PaperDetail } from "$lib/utils/db";
 	import { base } from "$app/paths";
+	import { readingList } from "$lib/stores/saved.svelte";
+
+	function toggleSave(d: PaperDetail) {
+		readingList.toggle({
+			id: d.id,
+			title: d.title,
+			authors: d.authors,
+			year: d.update_date ? parseInt(d.update_date.slice(0, 4), 10) : null,
+			isArxiv: true,
+		});
+	}
 
 	let detail = $state<PaperDetail | null>(null);
 	let loading = $state(true);
@@ -30,6 +41,9 @@
 
 <svelte:head>
 	<title>{detail?.title ?? "Paper"} — arXiv Explorer</title>
+	{#if detail?.abstract}
+		<meta name="description" content={detail.abstract.slice(0, 160)} />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
@@ -49,20 +63,36 @@
 		<div class="py-20 text-center">
 			<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
 			<p class="label-caps mt-2">{error}</p>
-			<a href={$page.params.id ? `https://arxiv.org/abs/${$page.params.id}` : ""} target="_blank" rel="noopener noreferrer"
-				class="label-caps mt-4 inline-block text-primary underline underline-offset-4 decoration-primary/30"
-			>
-				View on arXiv.org →
-			</a>
+			{#if /^\d{4}\.\d{4,5}$/.test($page.params.id ?? "") || /^[a-z-]+(\.[A-Z]{2})?\/\d{7}$/.test($page.params.id ?? "")}
+				<a href={`https://arxiv.org/abs/${$page.params.id}`} target="_blank" rel="noopener noreferrer"
+					class="label-caps mt-4 inline-block text-primary underline underline-offset-4 decoration-primary/30"
+				>
+					View on arXiv.org →
+				</a>
+			{/if}
 		</div>
 	{:else if detail}
 		<article>
-			<p class="label-caps mb-3">
-				{detail.id}
-				{#if detail.venue}
-					· {detail.venue}
-				{/if}
-			</p>
+			<div class="mb-3 flex items-center justify-between gap-4">
+				<p class="label-caps">
+					{detail.id}
+					{#if detail.venue}
+						· {detail.venue}
+					{/if}
+				</p>
+				<button
+					onclick={() => toggleSave(detail!)}
+					aria-pressed={readingList.has(detail.id)}
+					class="inline-flex shrink-0 items-center gap-2 border px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.15em] transition-colors {readingList.has(detail.id)
+						? 'border-primary/40 text-primary'
+						: 'border-outline/20 text-on-surface-variant hover:border-primary hover:text-primary'}"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill={readingList.has(detail.id) ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+					</svg>
+					{readingList.has(detail.id) ? "Saved" : "Save"}
+				</button>
+			</div>
 			<h1 class="font-display mb-6 text-[clamp(1.5rem,3vw,2.5rem)] font-bold leading-tight tracking-tight text-on-surface">
 				{detail.title}
 			</h1>
@@ -76,7 +106,7 @@
 			{#if detail.abstract}
 				<div class="mb-10 border border-outline/20 bg-surface-container p-6">
 					<p class="label-caps mb-3">Abstract</p>
-					<p class="font-mono text-sm leading-[1.75] text-on-surface">
+					<p class="font-body text-[15px] leading-[1.75] text-on-surface">
 						{detail.abstract}
 					</p>
 				</div>

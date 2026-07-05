@@ -2,7 +2,7 @@
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
-	import { searchPapers, type PaperResult } from "$lib/utils/db";
+	import { searchPapers, searchArxivCategory, type PaperResult } from "$lib/utils/db";
 	import PaperCard from "./PaperCard.svelte";
 
 	let query = $state("");
@@ -13,12 +13,15 @@
 	let error: string | null = $state(null);
 	let yearFrom = $state("");
 	let yearTo = $state("");
+	let viaArxiv = $state(false);
 
 	const LIMIT = 30;
 
 	onMount(() => {
 		const urlQuery = $page.url.searchParams.get("q");
 		const urlPage = Math.max(1, parseInt($page.url.searchParams.get("page") || "1", 10));
+		yearFrom = $page.url.searchParams.get("from") || "";
+		yearTo = $page.url.searchParams.get("to") || "";
 		if (urlQuery) {
 			query = urlQuery;
 			if (urlQuery.trim().length >= 2) {
@@ -33,6 +36,8 @@
 		const params = new URLSearchParams();
 		if (q) params.set("q", q);
 		if (pageNum > 1) params.set("page", String(pageNum));
+		if (yearFrom) params.set("from", yearFrom);
+		if (yearTo) params.set("to", yearTo);
 		const str = params.toString();
 		const url = str ? `?${str}` : window.location.pathname;
 		replaceState(url, {});
@@ -59,15 +64,24 @@
 	async function doSearch() {
 		error = null;
 		const seq = ++requestSeq;
-		const currentYear = new Date().getFullYear();
-		const yr = yearFrom && yearTo ? `${yearFrom}-${yearTo}` : yearFrom || yearTo ? `${yearFrom || "1991"}-${yearTo || String(currentYear)}` : undefined;
+		const catMatch = query.trim().match(/^cat:(\S+)$/i);
 		try {
-			const res = await searchPapers(query, {
-				limit: LIMIT,
-				offset,
-				yearRange: yr,
-			});
-			if (seq !== requestSeq) return;
+			let res: { results: PaperResult[]; total: number };
+			if (catMatch) {
+				res = await searchArxivCategory(catMatch[1], { limit: LIMIT, offset });
+				if (seq !== requestSeq) return;
+				viaArxiv = true;
+			} else {
+				const currentYear = new Date().getFullYear();
+				const yr = yearFrom && yearTo ? `${yearFrom}-${yearTo}` : yearFrom || yearTo ? `${yearFrom || "1991"}-${yearTo || String(currentYear)}` : undefined;
+				res = await searchPapers(query, {
+					limit: LIMIT,
+					offset,
+					yearRange: yr,
+				});
+				if (seq !== requestSeq) return;
+				viaArxiv = false;
+			}
 			results = res.results;
 			total = res.total;
 			syncUrl(query, offset);
@@ -79,8 +93,12 @@
 		}
 	}
 
-	function nextPage() { offset += LIMIT; doSearch(); }
-	function prevPage() { offset = Math.max(0, offset - LIMIT); doSearch(); }
+	function scrollResultsToTop() {
+		window.scrollTo({ top: 0, behavior: "smooth" });
+	}
+
+	async function nextPage() { offset += LIMIT; await doSearch(); scrollResultsToTop(); }
+	async function prevPage() { offset = Math.max(0, offset - LIMIT); await doSearch(); scrollResultsToTop(); }
 </script>
 
 <div class="space-y-5">
@@ -120,7 +138,7 @@
 
 	{#if error}
 		<div class="py-16 text-center font-mono text-sm text-warning-red">
-			{error}
+			{error === "SEARCH_BUSY" ? "Semantic Scholar is busy right now — retrying usually works in a few seconds." : error}
 			<button
 				onclick={() => doSearch()}
 				class="ml-2 text-primary underline underline-offset-4 decoration-primary/30"
@@ -131,6 +149,7 @@
 	{:else if query.trim().length === 0}
 		<div class="py-16 text-center">
 			<p class="font-mono text-sm text-outline">TYPE AT LEAST 2 CHARACTERS TO SCAN</p>
+			<p class="mt-1 font-mono text-xs text-outline">tip: cat:cs.LG lists a category's newest papers</p>
 		</div>
 	{:else if !searching && results.length === 0}
 		<div class="py-16 text-center">
@@ -141,7 +160,7 @@
 			<div class="font-mono text-xs text-on-surface-variant">
 				<span class="text-primary font-bold">{total.toLocaleString()}</span>
 				result{total !== 1 ? "s" : ""} · “{query}”
-				<span class="ml-2 text-outline">via Semantic Scholar</span>
+				<span class="ml-2 text-outline">via {viaArxiv ? "arXiv" : "Semantic Scholar"}</span>
 			</div>
 			{#if total > LIMIT}
 				<div class="label-caps">

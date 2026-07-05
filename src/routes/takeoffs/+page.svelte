@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { base } from "$app/paths";
-
-	interface Category { id: string; trend: number; trend_ci: [number, number]; }
-	interface CausalData { edges: any[]; categories: Category[]; }
+	import { annualPct, fmtAnnualPct, type CausalData, type CausalCategory } from "$lib/utils/trends";
 
 	let data = $state<CausalData | null>(null);
 	let loading = $state(true);
@@ -54,22 +52,36 @@
 		});
 	});
 
+	// bars scale to the largest |annual growth| currently in view
+	let maxAbsPct = $derived(
+		Math.max(1, ...sorted.map((c: CausalCategory) => Math.abs(annualPct(c.trend)))),
+	);
+
+	function barWidth(c: CausalCategory): number {
+		return Math.sqrt(Math.abs(annualPct(c.trend)) / maxAbsPct) * 100;
+	}
+
 	function toggleSort(field: "trend" | "id") {
 		if (sortField === field) sortDir = sortDir === "desc" ? "asc" : "desc";
 		else { sortField = field; sortDir = "desc"; }
 		offset = 0;
 	}
 
+	function ariaSort(field: "trend" | "id"): "ascending" | "descending" | undefined {
+		if (sortField !== field) return undefined;
+		return sortDir === "desc" ? "descending" : "ascending";
+	}
 </script>
 
 <svelte:head>
 	<title>Takeoffs — arXiv Explorer</title>
+	<meta name="description" content="Annual growth rates for every arXiv category, with confidence intervals." />
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
 	<header class="mb-10 flex flex-wrap items-end justify-between gap-4 border-l-4 border-primary pl-8">
 		<div>
-			<p class="label-caps mb-3">Growth rates · {data?.categories.length ?? "?"} categories</p>
+			<p class="label-caps mb-3">Annual growth · {data?.categories.length ?? "?"} categories</p>
 			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">Takeoffs</h1>
 		</div>
 		<select
@@ -96,11 +108,15 @@
 			<table class="w-full text-left font-mono text-sm">
 				<thead>
 					<tr class="border-b border-outline/20 bg-surface-container">
-						<th onclick={() => toggleSort("id")} class="label-caps cursor-pointer px-4 py-3">
-							Category {sortField === "id" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+						<th aria-sort={ariaSort("id")} class="px-4 py-1.5">
+							<button onclick={() => toggleSort("id")} class="label-caps py-1.5 transition-colors hover:text-primary">
+								Category {sortField === "id" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+							</button>
 						</th>
-						<th onclick={() => toggleSort("trend")} class="label-caps cursor-pointer px-4 py-3">
-							Growth/month {sortField === "trend" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+						<th aria-sort={ariaSort("trend")} class="px-4 py-1.5">
+							<button onclick={() => toggleSort("trend")} class="label-caps py-1.5 transition-colors hover:text-primary">
+								Growth/year {sortField === "trend" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+							</button>
 						</th>
 						<th class="label-caps px-4 py-3">95% CI</th>
 						<th class="label-caps px-4 py-3">Domain</th>
@@ -117,17 +133,17 @@
 									<div class="h-2 w-20 overflow-hidden bg-surface-container-high">
 										<div
 											class="h-full"
-											style="width: {Math.min(100, Math.abs(cat.trend) * 3000)}%;
+											style="width: {barWidth(cat)}%;
 												background: {cat.trend > 0 ? 'var(--signal-green)' : 'var(--warning-red)'}"
 										></div>
 									</div>
 									<span class="font-mono text-xs" class:text-signal-green={cat.trend > 0} class:text-warning-red={cat.trend < 0}>
-										{cat.trend > 0 ? "+" : ""}{(cat.trend * 100).toFixed(2)}%
+										{fmtAnnualPct(cat.trend)}
 									</span>
 								</div>
 							</td>
-							<td class="px-4 py-3 font-mono text-xs text-outline">
-								[{(cat.trend_ci[0] * 100).toFixed(2)}, {(cat.trend_ci[1] * 100).toFixed(2)}]
+							<td class="px-4 py-3 font-mono text-xs text-on-surface-variant">
+								[{annualPct(cat.trend_ci[0]).toFixed(1)}, {annualPct(cat.trend_ci[1]).toFixed(1)}]
 							</td>
 							<td class="px-4 py-3 font-mono text-xs text-on-surface-variant">{domainMap[cat.id] ?? "—"}</td>
 						</tr>

@@ -4,10 +4,23 @@
 	import * as d3 from "d3";
 
 	interface AuthNode { id: string; label: string; weight: number; }
-	interface AuthEdge { source: string; target: string; weight: number; }
-	interface AuthGraph { nodes: AuthNode[]; edges: AuthEdge[]; metadata: { total_nodes: number; total_edges: number; } }
 
 	interface DispNode extends d3.SimulationNodeDatum { id: string; label: string; weight: number; }
+
+	interface AuthorShardEntry { w: number; co: [string, number][]; }
+	type AuthorShard = Record<string, AuthorShardEntry>;
+
+	const SHARD_COUNT = 64;
+
+	// Must match scripts/build_author_shards.mjs exactly.
+	function fnv1a32(str: string): number {
+		let h = 0x811c9dc5;
+		for (let i = 0; i < str.length; i++) {
+			h ^= str.charCodeAt(i);
+			h = Math.imul(h, 0x01000193) >>> 0;
+		}
+		return h;
+	}
 
 	let author = $state<AuthNode | null>(null);
 	let coauthors: { name: string; weight: number }[] = $state([]);
@@ -22,23 +35,35 @@
 		loading = true;
 		error = null;
 		const seq = ++requestSeq;
-		fetch(`${base}/data/author_graph.json`).then((r) => {
+		const shard = fnv1a32(name) % SHARD_COUNT;
+		fetch(`${base}/data/authors/shard-${shard}.json`).then((r) => {
 			if (!r.ok) throw new Error("Failed to load");
-			return r.json() as Promise<AuthGraph>;
+			return r.json() as Promise<AuthorShard>;
 		}).then((data) => {
 			if (seq !== requestSeq) return;
-			const found = data.nodes.find((n) => n.id.toLowerCase() === name.toLowerCase());
-			if (!found) { error = "Author not found"; return; }
-			author = found;
-			const related = data.edges
-				.filter((e) => e.source === found.id || e.target === found.id)
-				.sort((a, b) => b.weight - a.weight)
-				.slice(0, 20)
-				.map((e) => ({ name: e.source === found.id ? e.target : e.source, weight: e.weight }));
-			coauthors = related;
-			renderMiniGraph(found.id, related);
+			let matchedName: string | null = null;
+			let entry: AuthorShardEntry | undefined = data[name];
+			if (entry) {
+				matchedName = name;
+			} else {
+				const key = Object.keys(data).find((k) => k.toLowerCase() === name.toLowerCase());
+				if (key) {
+					matchedName = key;
+					entry = data[key];
+				}
+			}
+			if (!entry || !matchedName) { error = "Author not found"; return; }
+			author = { id: name, label: matchedName, weight: entry.w };
+			coauthors = entry.co.slice(0, 20).map(([coName, weight]) => ({ name: coName, weight }));
 		}).catch((e) => { if (requestSeq === seq) error = e instanceof Error ? e.message : "Failed"; })
 		.finally(() => { if (requestSeq === seq) loading = false; });
+	});
+
+	// Draw once both the data and the <svg> exist — the svg mounts only after
+	// `loading` flips, so drawing from the fetch chain finds no element.
+	$effect(() => {
+		if (!author || !svgEl) return;
+		renderMiniGraph(author.label, coauthors);
 	});
 
 	function renderMiniGraph(centerId: string, coauthorsList: { name: string; weight: number }[]) {

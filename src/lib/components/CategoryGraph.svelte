@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { base } from "$app/paths";
+  import { goto } from "$app/navigation";
   import * as d3 from "d3";
 
   interface CategoryNode extends d3.SimulationNodeDatum {
@@ -63,7 +64,9 @@
     );
     simulation.tick(ticks);
 
-    d3.select(svg).append("g")
+    const root = d3.select(svg).append("g");
+
+    root.append("g")
       .selectAll("line")
       .data(graph.edges)
       .join("line")
@@ -75,7 +78,7 @@
       .attr("x2", (d: any) => d.target.x)
       .attr("y2", (d: any) => d.target.y);
 
-    const node = d3.select(svg).append("g")
+    const node = root.append("g")
       .selectAll("circle")
       .data(graph.nodes)
       .join("circle")
@@ -83,12 +86,34 @@
       .attr("fill", (d) => d.color)
       .attr("stroke", "var(--surface-container)")
       .attr("stroke-width", 1.5)
-      .attr("cursor", "crosshair")
+      .attr("cursor", "pointer")
       .attr("cx", (d: any) => d.x)
-      .attr("cy", (d: any) => d.y);
+      .attr("cy", (d: any) => d.y)
+      .on("click", (_e: MouseEvent, d: CategoryNode) => goto(`/trends/${d.id}`));
 
     node.append("title")
-      .text((d) => `${d.label} (${d.weight.toLocaleString()} papers)`);
+      .text((d) => `${d.label} (${d.weight.toLocaleString()} papers) — view trend`);
+
+    // Label the heaviest nodes so the map is readable without hovering
+    const top = [...graph.nodes].sort((a, b) => b.weight - a.weight).slice(0, 14);
+    root.append("g")
+      .selectAll("text")
+      .data(top)
+      .join("text")
+      .attr("x", (d: any) => d.x)
+      .attr("y", (d: any) => d.y - Math.max(4, Math.sqrt(d.weight) / 15) - 4)
+      .attr("text-anchor", "middle")
+      .attr("font-family", "var(--font-mono)")
+      .attr("font-size", "9px")
+      .attr("font-weight", "700")
+      .attr("fill", "var(--on-surface-variant)")
+      .attr("pointer-events", "none")
+      .text((d) => d.id);
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.5, 6])
+      .on("zoom", (e) => root.attr("transform", e.transform));
+    d3.select(svg).call(zoom);
   }
 </script>
 
@@ -108,7 +133,7 @@
       bind:this={svgEl}
       class="h-[450px] w-full sm:h-[500px]"
       role="img"
-      aria-label="Category co-occurrence network graph showing {data.nodes.length} categories and {data.edges.length} connections"
+      aria-label="Category co-occurrence network graph showing {data.nodes.length} categories and {data.edges.length} connections. Scroll to zoom, drag to pan, click a node to open its trend page."
     ></svg>
   {/if}
 </div>

@@ -1,4 +1,9 @@
-const API_BASE = "https://api.semanticscholar.org/graph/v1";
+// Both APIs are reached through same-origin proxies (Cloudflare Pages
+// Functions in production, Vite dev-server proxy locally): the arXiv export
+// API sends no CORS headers at all, and Semantic Scholar error responses
+// (429s) lack them, which browsers surface as an opaque "Failed to fetch".
+const API_BASE = "/api/s2/graph/v1";
+const ARXIV_API_BASE = "/api/arxiv";
 
 export interface PaperResult {
 	id: string;
@@ -6,6 +11,8 @@ export interface PaperResult {
 	authors: string;
 	year: number | null;
 	citationCount: number;
+	isArxiv: boolean;
+	s2Url: string;
 }
 
 export interface PaperDetail {
@@ -29,7 +36,19 @@ const RATE_LIMIT_MS = 1100;
 let lastRequest = 0;
 let requestQueue: Promise<void> = Promise.resolve();
 
-async function rateLimitedFetch(url: string): Promise<Response> {
+const CACHE_LIMIT = 100;
+const searchCache = new Map<string, { results: PaperResult[]; total: number }>();
+const detailCache = new Map<string, PaperDetail | null>();
+
+function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
+	cache.set(key, value);
+	if (cache.size > CACHE_LIMIT) {
+		const oldestKey = cache.keys().next().value as K;
+		cache.delete(oldestKey);
+	}
+}
+
+async function rateLimitedFetchOnce(url: string): Promise<Response> {
 	const prev = requestQueue;
 	let resolveNext: () => void;
 	requestQueue = new Promise((r) => { resolveNext = r; });
@@ -40,6 +59,21 @@ async function rateLimitedFetch(url: string): Promise<Response> {
 	lastRequest = Date.now();
 	const res = fetch(url);
 	res.finally(() => resolveNext!());
+	return res;
+}
+
+async function rateLimitedFetch(url: string): Promise<Response> {
+	const retryDelaysMs = [2000, 5000];
+	let res = await rateLimitedFetchOnce(url);
+	for (const fallbackDelay of retryDelaysMs) {
+		if (res.status !== 429) return res;
+		const retryAfter = res.headers.get("Retry-After");
+		const retrySeconds = retryAfter ? parseFloat(retryAfter) : NaN;
+		const delayMs = Number.isFinite(retrySeconds) ? retrySeconds * 1000 : fallbackDelay;
+		await new Promise((r) => setTimeout(r, delayMs));
+		res = await rateLimitedFetchOnce(url);
+	}
+	if (res.status === 429) throw new Error("SEARCH_BUSY");
 	return res;
 }
 
@@ -64,6 +98,10 @@ export async function searchPapers(
 	const limit = options?.limit ?? 30;
 	const offset = options?.offset ?? 0;
 
+	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: options?.yearRange ?? null });
+	const cached = searchCache.get(cacheKey);
+	if (cached) return cached;
+
 	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
 	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
 
@@ -71,30 +109,98 @@ export async function searchPapers(
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
 
 	const data = await res.json();
-	const results: PaperResult[] = (data.data ?? []).map((d: Record<string, unknown>) => ({
-		id: arxivId(d) || ((d as { paperId?: string }).paperId ?? ""),
-		title: (d as { title?: string }).title ?? "",
-		authors: authorList(d),
-		year: (d as { year?: number | null }).year ?? null,
-		citationCount: (d as { citationCount?: number }).citationCount ?? 0,
-	}));
+	const results: PaperResult[] = (data.data ?? []).map((d: Record<string, unknown>) => {
+		const ext = (d as { externalIds?: Record<string, string> }).externalIds;
+		const paperId = (d as { paperId?: string }).paperId ?? "";
+		return {
+			id: arxivId(d) || paperId,
+			title: (d as { title?: string }).title ?? "",
+			authors: authorList(d),
+			year: (d as { year?: number | null }).year ?? null,
+			citationCount: (d as { citationCount?: number }).citationCount ?? 0,
+			isArxiv: Boolean(ext?.ArXiv),
+			s2Url: `https://www.semanticscholar.org/paper/${paperId}`,
+		};
+	});
 
-	return { results, total: (data as { total?: number }).total ?? 0 };
+	const result = { results, total: (data as { total?: number }).total ?? 0 };
+	setCached(searchCache, cacheKey, result);
+	return result;
+}
+
+export async function searchArxivCategory(
+	cat: string,
+	opts?: { offset?: number; limit?: number },
+): Promise<{ results: PaperResult[]; total: number }> {
+	const limit = opts?.limit ?? 30;
+	const offset = opts?.offset ?? 0;
+
+	const cacheKey = JSON.stringify({ kind: "arxiv", cat, limit, offset });
+	const cached = searchCache.get(cacheKey);
+	if (cached) return cached;
+
+	const url = `${ARXIV_API_BASE}?search_query=${encodeURIComponent(`cat:${cat}`)}&start=${offset}&max_results=${limit}&sortBy=submittedDate&sortOrder=descending`;
+
+	const res = await fetch(url);
+	if (!res.ok) throw new Error(`arXiv error: ${res.status}`);
+
+	const text = await res.text();
+	const doc = new DOMParser().parseFromString(text, "application/xml");
+
+	const entries = Array.from(doc.getElementsByTagName("entry"));
+	const results: PaperResult[] = entries.map((entry) => {
+		const idText = entry.getElementsByTagName("id")[0]?.textContent ?? "";
+		const id = idText.replace(/^https?:\/\/arxiv\.org\/abs\//, "").replace(/v\d+$/, "");
+		const titleText = entry.getElementsByTagName("title")[0]?.textContent ?? "";
+		const title = titleText.replace(/\s+/g, " ").trim();
+		const authors = Array.from(entry.getElementsByTagName("author"))
+			.map((a) => a.getElementsByTagName("name")[0]?.textContent ?? "")
+			.filter(Boolean)
+			.join(", ");
+		const published = entry.getElementsByTagName("published")[0]?.textContent ?? "";
+		const year = published ? parseInt(published.slice(0, 4), 10) : null;
+
+		return {
+			id,
+			title,
+			authors,
+			year: year && !Number.isNaN(year) ? year : null,
+			citationCount: 0,
+			isArxiv: true,
+			s2Url: "",
+		};
+	});
+
+	let total = 0;
+	const totalResultsEl = Array.from(doc.getElementsByTagName("*")).find(
+		(el) => el.localName === "totalResults",
+	);
+	if (totalResultsEl?.textContent) total = parseInt(totalResultsEl.textContent, 10) || 0;
+
+	const result = { results, total };
+	setCached(searchCache, cacheKey, result);
+	return result;
 }
 
 export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 	const cleanId = id.replace(/v\d+$/, "");
+
+	if (detailCache.has(cleanId)) return detailCache.get(cleanId)!;
+
 	const res = await rateLimitedFetch(
 		`${API_BASE}/paper/arXiv:${encodeURIComponent(cleanId)}?fields=${DETAIL_FIELDS}`,
 	);
-	if (res.status === 404) return null;
+	if (res.status === 404) {
+		setCached(detailCache, cleanId, null);
+		return null;
+	}
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
 
 	const d = await res.json();
 	const ext = (d as { externalIds?: Record<string, string> }).externalIds ?? {};
 	const pdf = (d as { openAccessPdf?: { license?: string } }).openAccessPdf;
 
-	return {
+	const detail: PaperDetail = {
 		id: cleanId,
 		title: (d as { title?: string }).title ?? "",
 		authors: authorList(d),
@@ -107,4 +213,7 @@ export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 		s2Url: `https://www.semanticscholar.org/paper/${(d as { paperId?: string }).paperId ?? ""}`,
 		citationCount: (d as { citationCount?: number }).citationCount ?? 0,
 	};
+
+	setCached(detailCache, cleanId, detail);
+	return detail;
 }

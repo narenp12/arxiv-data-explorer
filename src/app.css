@@ -19,9 +19,12 @@
 	--on-surface: #18181b;
 	--on-surface-variant: #52525b;
 
-	/* Borders */
-	--outline: #d4d4d8;
+	/* Borders + faint text (needs to survive as 11px text in light mode) */
+	--outline: #8e8e96;
 	--outline-variant: #a1a1aa;
+
+	/* Micro-labels (label-caps) — must clear WCAG on light surface */
+	--label: #52525b;
 
 	/* Accents */
 	--primary: #007c8a;
@@ -50,6 +53,8 @@
 	--outline: #849495;
 	--outline-variant: #3a494b;
 
+	--label: #849495;
+
 	--primary: #00dbe7;
 	--primary-container: #00f2ff;
 	--secondary: #d0bcff;
@@ -62,9 +67,10 @@
 }
 
 @theme inline {
-	--font-display: "Playfair Display", ui-serif, Georgia, serif;
+	--font-display: "Playfair Display Variable", ui-serif, Georgia, serif;
 	--font-sans: "Space Mono", ui-monospace, "SF Mono", monospace;
 	--font-mono: "Space Mono", ui-monospace, "SF Mono", monospace;
+	--font-body: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 
 	--color-surface: var(--surface);
 	--color-surface-container: var(--surface-container);
@@ -75,6 +81,7 @@
 	--color-on-surface-variant: var(--on-surface-variant);
 	--color-outline: var(--outline);
 	--color-outline-variant: var(--outline-variant);
+	--color-label: var(--label);
 	--color-primary: var(--primary);
 	--color-primary-container: var(--primary-container);
 	--color-secondary: var(--secondary);
@@ -128,7 +135,12 @@
 
 /* Uppercase mono micro-label */
 @utility label-caps {
-	@apply font-mono text-[11px] uppercase tracking-[0.15em] text-outline font-bold;
+	@apply font-mono text-[11px] uppercase tracking-[0.15em] text-label font-bold;
+}
+
+/* Skeleton placeholder for loading data cells */
+@utility skeleton {
+	@apply animate-pulse bg-surface-container-high;
 }
 
 /* Data readout value */

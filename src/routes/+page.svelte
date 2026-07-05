@@ -3,9 +3,11 @@
 	import { base } from "$app/paths";
 	import type { NetworkStats } from "$lib/types";
 	import CategoryGraph from "$lib/components/CategoryGraph.svelte";
+	import { fmtAnnualPct, sparklinePoints, type CausalData, type DynamicsData } from "$lib/utils/trends";
 
 	let stats = $state<NetworkStats | null>(null);
 	let error = $state(false);
+	let pulse = $state<{ id: string; trend: number; points: string }[]>([]);
 
 	onMount(async () => {
 		try {
@@ -18,6 +20,27 @@
 		} catch {
 			error = true;
 		}
+
+		try {
+			const [causalRes, dynRes] = await Promise.all([
+				fetch(`${base}/data/causal_edges.json`),
+				fetch(`${base}/data/category_dynamics.json`),
+			]);
+			if (causalRes.ok && dynRes.ok) {
+				const causal: CausalData = await causalRes.json();
+				const dyn: DynamicsData = await dynRes.json();
+				pulse = [...causal.categories]
+					.sort((a, b) => b.trend - a.trend)
+					.slice(0, 5)
+					.map((c) => ({
+						id: c.id,
+						trend: c.trend,
+						points: sparklinePoints(dyn.series[c.id] ?? [], 120, 32),
+					}));
+			}
+		} catch {
+			// pulse strip simply doesn't render
+		}
 	});
 
 	function fmt(n: number): string {
@@ -27,15 +50,16 @@
 	}
 
 	const statCells = $derived([
-		{ label: "Papers", value: stats ? fmt(stats.total_papers) : "—" },
-		{ label: "Authors", value: stats ? fmt(stats.authors) : "—" },
-		{ label: "Categories", value: stats ? fmt(stats.categories) : "—" },
-		{ label: "Multi-author", value: stats ? fmt(stats.multi_author_papers) : "—" },
+		{ label: "Papers", value: stats ? fmt(stats.total_papers) : null },
+		{ label: "Authors", value: stats ? fmt(stats.authors) : null },
+		{ label: "Categories", value: stats ? fmt(stats.categories) : null },
+		{ label: "Multi-author", value: stats ? fmt(stats.multi_author_papers) : null },
 	]);
 </script>
 
 <svelte:head>
 	<title>arXiv Explorer — optical laboratory</title>
+	<meta name="description" content="Search millions of arXiv papers and explore category networks, co-authorship graphs, and causal research trends." />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
@@ -71,11 +95,47 @@
 			<div
 				class="px-5 py-6 transition-colors hover:bg-surface-container-low {i > 0 ? 'border-l border-outline/30 max-sm:odd:border-l-0' : ''} {i >= 2 ? 'max-sm:border-t max-sm:border-outline/30' : ''}"
 			>
-				<div class="font-mono text-3xl font-bold tracking-tight text-on-surface">{cell.value}</div>
+				{#if cell.value}
+					<div class="font-mono text-3xl font-bold tracking-tight text-on-surface">{cell.value}</div>
+				{:else}
+					<div class="skeleton h-9 w-20"></div>
+				{/if}
 				<div class="label-caps mt-1.5 text-[10px]">{cell.label}</div>
 			</div>
 		{/each}
 	</div>
+
+	<!-- Field pulse — fastest-growing categories -->
+	{#if pulse.length > 0}
+		<section class="mb-16">
+			<div class="mb-4 flex items-baseline justify-between border-b border-outline/30 pb-3">
+				<div>
+					<p class="label-caps mb-1">Field pulse · annual growth</p>
+					<h2 class="font-display text-2xl font-bold tracking-tight text-on-surface">Taking off right now</h2>
+				</div>
+				<a href="/takeoffs" class="font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
+					ALL 161 →
+				</a>
+			</div>
+			<div class="grid grid-cols-2 gap-px bg-outline/20 sm:grid-cols-5">
+				{#each pulse as cat}
+					<a href="/trends/{cat.id}" class="group bg-surface px-4 py-5 transition-colors hover:bg-surface-container-low">
+						<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+						<div class="mt-1 font-mono text-xl font-bold text-signal-green">{fmtAnnualPct(cat.trend)}</div>
+						<svg viewBox="0 0 120 32" class="mt-3 h-8 w-full" preserveAspectRatio="none" aria-hidden="true">
+							<polyline
+								points={cat.points}
+								fill="none"
+								stroke="var(--primary)"
+								stroke-width="1.5"
+								class="opacity-60 transition-opacity group-hover:opacity-100"
+							/>
+						</svg>
+					</a>
+				{/each}
+			</div>
+		</section>
+	{/if}
 
 	<!-- Category network panel -->
 	<section class="mb-16">
