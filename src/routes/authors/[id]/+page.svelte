@@ -29,9 +29,12 @@
 	let svgEl = $state<SVGSVGElement>();
 	let showGraph = $state(false);
 
+	let requestSeq = 0;
+
 	$effect(() => {
 		const id = $page.params.id;
 		if (!id) { loading = false; return; }
+		const seq = ++requestSeq;
 		loading = true;
 		profile = null;
 		graphAuthor = null;
@@ -40,9 +43,9 @@
 		showGraph = false;
 
 		fetchAuthorProfile(id).then((p) => {
+			if (seq !== requestSeq) return;
 			profile = p;
 			if (p) { loading = false; return; }
-			const seq = ++requestSeq;
 			const shard = fnv1a32(id) % SHARD_COUNT;
 			return fetch(`${base}/data/authors/shard-${shard}.json`).then((r) => {
 				if (!r.ok) throw new Error("Failed to load");
@@ -61,8 +64,12 @@
 				graphAuthor = { id, label: matchedName, weight: entry.w };
 				coauthors = entry.co.slice(0, 20).map(([coName, weight]) => ({ name: coName, weight }));
 				showGraph = true;
-			}).catch((e) => { if (requestSeq === seq) graphError = e instanceof Error ? e.message : "Failed"; })
-			.finally(() => { loading = false; });
+			});
+		}).catch(() => {
+			if (seq !== requestSeq) return;
+			graphError = "Failed to load profile";
+		}).finally(() => {
+			if (seq === requestSeq) loading = false;
 		});
 	});
 
@@ -70,8 +77,6 @@
 		if (!graphAuthor || !svgEl) return;
 		renderMiniGraph(graphAuthor.label, coauthors);
 	});
-
-	let requestSeq = 0;
 
 	function renderMiniGraph(centerId: string, coauthorsList: { name: string; weight: number }[]) {
 		if (!svgEl) return;
