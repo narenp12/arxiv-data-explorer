@@ -278,6 +278,37 @@ def build_network_stats(df: pl.DataFrame) -> dict:
     }
 
 
+def build_timeseries(df: pl.DataFrame, ts_dir: Path):
+    ts_dir.mkdir(parents=True, exist_ok=True)
+
+    monthly = df.with_columns(
+        pl.col("update_date").str.slice(0, 7).alias("year_month"),
+        pl.col("categories").str.split(" ").alias("cat_list"),
+    ).explode("cat_list").with_columns(
+        pl.col("cat_list").replace_strict(
+            list(CATEGORY_ALIASES.keys()),
+            list(CATEGORY_ALIASES.values()),
+            default=pl.col("cat_list"),
+        ).alias("cat_list")
+    ).group_by(["year_month", "cat_list"]).agg(
+        pl.len().alias("count")
+    ).sort("year_month")
+
+    by_month: dict[str, dict[str, int]] = {}
+    for row in monthly.iter_rows(named=True):
+        ym = row["year_month"]
+        cat = row["cat_list"]
+        cnt = row["count"]
+        if ym not in by_month:
+            by_month[ym] = {}
+        by_month[ym][cat] = cnt
+
+    for ym, cats in sorted(by_month.items()):
+        (ts_dir / f"{ym}.json").write_text(
+            json.dumps(cats, separators=(",", ":"))
+        )
+
+
 def build_author_graph(df: pl.DataFrame) -> dict:
     name_expr = (
         pl.element().list.get(1, null_on_oob=True).fill_null("")
@@ -443,6 +474,12 @@ if __name__ == "__main__":
     build_search_db(df, db_path)
     size_mb = db_path.stat().st_size / 1024 / 1024
     print(f"  search.db: {size_mb:.1f} MB")
+
+    print("Building time series\u2026")
+    ts_dir = DATA_DIR / "timeseries"
+    build_timeseries(df, ts_dir)
+    ts_files = list(ts_dir.glob("*.json"))
+    print(f"  {len(ts_files)} monthly files")
 
     df.write_parquet(DATA_DIR / "papers.parquet")
 
