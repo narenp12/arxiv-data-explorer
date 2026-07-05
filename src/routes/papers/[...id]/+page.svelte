@@ -3,6 +3,7 @@
 	import { getPaperDetail, type PaperDetail } from "$lib/utils/db";
 	import { base } from "$app/paths";
 	import { readingList } from "$lib/stores/saved.svelte";
+	import type { ConceptTag } from "$lib/types";
 
 	function toggleSave(d: PaperDetail) {
 		readingList.toggle({
@@ -17,6 +18,7 @@
 	let detail = $state<PaperDetail | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let concepts = $state<ConceptTag[]>([]);
 
 	$effect(() => {
 		const id = $page.params.id ?? "";
@@ -36,6 +38,17 @@
 		}).finally(() => {
 			loading = false;
 		});
+	});
+
+	$effect(() => {
+		if (!detail) return;
+		const doi = detail.doi;
+		const arxivId = detail.id;
+		if (doi || arxivId) {
+			import("$lib/utils/openalex").then(({ fetchConcepts }) =>
+				fetchConcepts(doi, arxivId).then((c) => { concepts = c; })
+			);
+		}
 	});
 </script>
 
