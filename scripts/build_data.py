@@ -1,9 +1,5 @@
 import argparse
-import json
-import os
-import sqlite3
 from pathlib import Path
-from collections import defaultdict
 
 import polars as pl
 from huggingface_hub import snapshot_download
@@ -12,8 +8,6 @@ HERE = Path(__file__).resolve().parent.parent
 DATA_DIR = HERE / "static" / "data"
 
 REMOTE_REPO = "open-index/open-arxiv"
-LOCAL_SAMPLE = HERE / "arxiv_random_sample.parquet"
-
 # ── category aliases from labels.py (inline to avoid Streamlit dep) ──
 CATEGORY_ALIASES = {
     "math-ph": "math.MP",
@@ -23,47 +17,6 @@ CATEGORY_ALIASES = {
     "patt-sol": "nlin.PS",
     "dg-ga": "math.DG",
     "comp-gas": "nlin.CG",
-}
-
-# ── domain grouping and colors (from network_app.py) ──
-DOMAIN_NAMES = {
-    "cs": "Computer Science",
-    "math": "Mathematics",
-    "stat": "Statistics",
-    "physics": "Physics",
-    "cond-mat": "Condensed Matter",
-    "astro-ph": "Astrophysics",
-    "eess": "Electrical Engineering & Systems Science",
-    "q-bio": "Quantitative Biology",
-    "q-fin": "Quantitative Finance",
-    "econ": "Economics",
-    "nlin": "Nonlinear Sciences",
-    "nucl": "Nuclear Physics",
-    "bayes-an": "Bayesian Analysis",
-}
-
-DOMAIN_COLORS = {
-    "cs": "#1f77b4",
-    "math": "#ff7f0e",
-    "stat": "#2ca02c",
-    "physics": "#d62728",
-    "astro-ph": "#9467bd",
-    "cond-mat": "#8c564b",
-    "gr-qc": "#7f7f7f",
-    "quant-ph": "#bcbd22",
-    "eess": "#17becf",
-    "q-bio": "#aec7e8",
-    "q-fin": "#ffbb78",
-    "econ": "#98df8a",
-    "nlin": "#ff9896",
-    "nucl": "#c5b0d5",
-    "nucl-th": "#c5b0d5",
-    "nucl-ex": "#c5b0d5",
-    "hep-th": "#e377c2",
-    "hep-ph": "#e377c2",
-    "hep-lat": "#e377c2",
-    "hep-ex": "#e377c2",
-    "bayes-an": "#9edae5",
 }
 
 
@@ -142,6 +95,9 @@ if __name__ == "__main__":
     if args.sample:
         df = df.sample(n=min(args.sample, len(df)))
         print(f"Using sample of {len(df):,} papers")
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(DATA_DIR / "papers.parquet")
 
     print(f"Total papers: {len(df):,}")
     print(f"Columns: {df.columns}")
