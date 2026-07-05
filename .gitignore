@@ -6,9 +6,6 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-static/data/papers.parquet
-static/data/search*.db
-static/data/detail*.db
 .env
 .env.local
 .svelte-kit/

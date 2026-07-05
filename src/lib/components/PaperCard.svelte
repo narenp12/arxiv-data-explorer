@@ -6,15 +6,21 @@
 
 <a
 	href="/papers/{paper.id}"
-	class="block rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-700"
+	class="group block border-b border-line px-1 py-4 transition-colors hover:bg-accent/4"
 >
-	<div class="mb-1 text-xs text-slate-500 dark:text-slate-400">
-		{paper.id}
+	<div class="mb-1.5 flex items-baseline gap-3">
+		<span class="font-mono text-[11px] tracking-wide text-accent">{paper.id}</span>
+		{#if paper.year}
+			<span class="font-mono text-[11px] text-faint">{paper.year}</span>
+		{/if}
+		{#if paper.citationCount > 0}
+			<span class="font-mono text-[11px] text-faint">{paper.citationCount.toLocaleString()} cit.</span>
+		{/if}
 	</div>
-	<div class="mb-1 text-sm font-medium leading-snug text-slate-900 dark:text-slate-100">
+	<div class="mb-1 text-[15px] leading-snug font-medium text-ink group-hover:underline group-hover:decoration-accent/40 group-hover:underline-offset-4">
 		{paper.title}
 	</div>
-	<div class="truncate text-xs text-slate-400">
+	<div class="truncate text-xs text-faint">
 		{paper.authors}
 	</div>
 </a>

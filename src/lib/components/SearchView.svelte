@@ -2,56 +2,32 @@
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
-	import {
-		loadDb, searchPapers, loadedRanges,
-		type PaperResult, type YearRange,
-	} from "$lib/utils/db";
+	import { searchPapers, type PaperResult } from "$lib/utils/db";
 	import PaperCard from "./PaperCard.svelte";
-
-	const ALL_RANGES: YearRange[] = [
-		"1991-1999", "2000-2009",
-		"2010-2014", "2015-2019",
-		"2020-2026",
-	];
 
 	let query = $state("");
 	let results: PaperResult[] = $state([]);
 	let total = $state(0);
 	let offset = $state(0);
-	let loading = $state(true);
-	let loadProgress = $state(0);
 	let searching = $state(false);
-	let dbReady = $state(false);
 	let error: string | null = $state(null);
-	let selectedRange: YearRange | "all" = $state("all");
 
-	onMount(async () => {
+	const LIMIT = 30;
+
+	onMount(() => {
 		const urlQuery = $page.url.searchParams.get("q");
-		const urlPage = parseInt($page.url.searchParams.get("page") || "1", 10);
-		if (urlQuery) query = urlQuery;
-
-		const outcomes = await Promise.allSettled(
-			ALL_RANGES.map(async (range) => {
-				await loadDb(range);
-				loadProgress++;
-			}),
-		);
-		if (outcomes.every(o => o.status === "rejected")) {
-			const first = outcomes[0] as PromiseRejectedResult;
-			error = first.reason instanceof Error
-				? first.reason.message
-				: "Failed to load search databases";
-		}
-
-		dbReady = true;
-		loading = false;
-
-		if (urlQuery && urlQuery.trim().length >= 2) {
-			doSearch((urlPage - 1) * 30);
+		const urlPage = Math.max(1, parseInt($page.url.searchParams.get("page") || "1", 10));
+		if (urlQuery) {
+			query = urlQuery;
+			if (urlQuery.trim().length >= 2) {
+				offset = (urlPage - 1) * LIMIT;
+				doSearch();
+			}
 		}
 	});
 
-	function syncUrl(q: string, pageNum: number) {
+	function syncUrl(q: string, off: number) {
+		const pageNum = Math.floor(off / LIMIT) + 1;
 		const params = new URLSearchParams();
 		if (q) params.set("q", q);
 		if (pageNum > 1) params.set("page", String(pageNum));
@@ -60,11 +36,8 @@
 		replaceState(url, {});
 	}
 
-	function activeRanges(): YearRange[] {
-		return selectedRange === "all" ? ALL_RANGES : [selectedRange];
-	}
-
 	let debounceTimer: ReturnType<typeof setTimeout>;
+	let requestSeq = 0;
 	function onInput(e: Event) {
 		const val = (e.target as HTMLInputElement).value;
 		query = val;
@@ -73,120 +46,107 @@
 			results = [];
 			total = 0;
 			offset = 0;
-			syncUrl("", 1);
+			syncUrl("", 0);
 			return;
 		}
 		searching = true;
-		debounceTimer = setTimeout(() => {
-			doSearch(0);
-		}, 300);
+		offset = 0;
+		debounceTimer = setTimeout(() => doSearch(), 300);
 	}
 
-	async function doSearch(newOffset: number) {
+	async function doSearch() {
+		error = null;
+		const seq = ++requestSeq;
 		try {
-			const ranges = activeRanges().filter(r => loadedRanges().includes(r));
-			const res = await searchPapers(query, ranges, 30, newOffset);
+			const res = await searchPapers(query, {
+				limit: LIMIT,
+				offset,
+			});
+			if (seq !== requestSeq) return;
 			results = res.results;
 			total = res.total;
-			offset = newOffset;
-			syncUrl(query, Math.floor(newOffset / 30) + 1);
+			syncUrl(query, offset);
 		} catch (e) {
+			if (seq !== requestSeq) return;
 			error = e instanceof Error ? e.message : "Search failed";
 		} finally {
-			searching = false;
+			if (seq === requestSeq) searching = false;
 		}
 	}
 
-	function nextPage() {
-		doSearch(offset + 30);
-	}
-	function prevPage() {
-		doSearch(Math.max(0, offset - 30));
-	}
+	function nextPage() { offset += LIMIT; doSearch(); }
+	function prevPage() { offset = Math.max(0, offset - LIMIT); doSearch(); }
 </script>
 
-<div class="space-y-4">
+<div class="space-y-5">
 	<div class="relative">
 		<input
 			type="search"
 			placeholder="Search papers… (e.g. quantum computing)"
 			oninput={onInput}
 			value={query}
-			class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm transition-colors focus:border-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:focus:border-blue-500"
-			disabled={!dbReady && !error}
+			class="w-full rounded-xl border border-line bg-panel px-5 py-3.5 text-base text-ink transition-colors placeholder:text-faint focus:border-accent focus:outline-none"
 		/>
 		{#if searching}
-			<div class="absolute right-3 top-3 animate-pulse text-sm text-slate-400">
+			<div class="kicker absolute top-4 right-4 animate-pulse">
 				searching…
 			</div>
 		{/if}
 	</div>
 
-	<div class="flex flex-wrap items-center gap-2 text-xs">
-		<span class="text-slate-500">Year range:</span>
-		{#each ["all", ...ALL_RANGES] as range}
-			<button
-				onclick={() => { selectedRange = range as YearRange | "all"; doSearch(0); }}
-				class="rounded-full px-3 py-1 transition-colors {selectedRange === range
-					? 'bg-blue-500 text-white'
-					: 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'}"
-			>
-				{range === "all" ? "All" : range}
-			</button>
-		{/each}
-	</div>
-
-	{#if loading}
-		<div class="animate-pulse py-12 text-center text-slate-500">
-			Loading search index ({loadProgress}/{ALL_RANGES.length})…
-		</div>
-	{:else if error}
-		<div class="py-12 text-center text-red-400">
+	{#if error}
+		<div class="py-16 text-center text-sm text-accent">
 			{error}
 			<button
-				onclick={() => location.reload()}
-				class="ml-2 underline"
+				onclick={() => doSearch()}
+				class="ml-2 underline underline-offset-2"
 			>
 				Retry
 			</button>
 		</div>
 	{:else if query.trim().length === 0}
-		<div class="py-12 text-center text-slate-500">
-			Type at least 2 characters to search
+		<div class="py-16 text-center">
+			<p class="font-sans text-base text-faint">Type at least 2 characters to search</p>
 		</div>
-	{:else if results.length === 0 && !searching}
-		<div class="py-12 text-center text-slate-500">
-			No results for "{query}"
+	{:else if !searching && results.length === 0}
+		<div class="py-16 text-center">
+			<p class="font-sans text-base text-faint">No results for “{query}”</p>
 		</div>
 	{:else}
-		<div class="mb-2 text-xs text-slate-500 dark:text-slate-400">
-			{total.toLocaleString()} result{total !== 1 ? "s" : ""} for "{query}"
-			{#if total > 30}
-				· page {Math.floor(offset / 30) + 1} of {Math.ceil(total / 30)}
+		<div class="flex items-baseline justify-between border-b border-line pb-2">
+			<div class="font-mono text-xs text-soft">
+				<span class="text-accent">{total.toLocaleString()}</span>
+				result{total !== 1 ? "s" : ""} · “{query}”
+				<span class="ml-2 text-faint">via Semantic Scholar</span>
+			</div>
+			{#if total > LIMIT}
+				<div class="kicker">
+					p. {Math.floor(offset / LIMIT) + 1} / {Math.ceil(total / LIMIT)}
+				</div>
 			{/if}
 		</div>
 
-		<div class="space-y-2">
+		<div class="!mt-0">
 			{#each results as paper (paper.id)}
 				<PaperCard {paper} />
 			{/each}
 		</div>
 
-		{#if total > 30}
+		{#if total > LIMIT}
 			<div class="flex justify-center gap-2 pt-4">
 				<button
 					onclick={prevPage}
-					disabled={offset === 0}
-					class="rounded bg-slate-100 px-4 py-2 text-sm transition-colors hover:bg-slate-200 disabled:opacity-30 dark:bg-slate-800 dark:hover:bg-slate-700"
+					disabled={offset <= 0}
+					class="rounded-full border border-line px-5 py-2 font-mono text-xs text-soft transition-colors hover:border-faint hover:text-ink disabled:opacity-30 disabled:hover:border-line disabled:hover:text-soft"
 				>
-					Previous
+					← Prev
 				</button>
 				<button
 					onclick={nextPage}
-					disabled={offset + 30 >= total}
-					class="rounded bg-slate-100 px-4 py-2 text-sm transition-colors hover:bg-slate-200 disabled:opacity-30 dark:bg-slate-800 dark:hover:bg-slate-700"
+					disabled={offset + LIMIT >= total}
+					class="rounded-full border border-line px-5 py-2 font-mono text-xs text-soft transition-colors hover:border-faint hover:text-ink disabled:opacity-30 disabled:hover:border-line disabled:hover:text-soft"
 				>
-					Next
+					Next →
 				</button>
 			</div>
 		{/if}

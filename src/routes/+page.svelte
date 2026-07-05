@@ -25,92 +25,96 @@
 		if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
 		return n.toLocaleString();
 	}
+
+	const statCells = $derived([
+		{ label: "Papers", value: stats ? fmt(stats.total_papers) : "—" },
+		{ label: "Authors", value: stats ? fmt(stats.authors) : "—" },
+		{ label: "Categories", value: stats ? fmt(stats.categories) : "—" },
+		{ label: "Multi-author", value: stats ? fmt(stats.multi_author_papers) : "—" },
+	]);
 </script>
 
-<div class="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
-	<!-- Hero -->
-	<div class="mb-16 text-center">
-		<div class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 shadow-lg">
-			<span class="text-2xl font-bold text-white">A</span>
-		</div>
-		<h1 class="mb-4 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl dark:text-slate-100">
-			arXiv Data Explorer
-		</h1>
-		<p class="mx-auto max-w-2xl text-lg text-slate-600 dark:text-slate-400">
-			Explore the arXiv research corpus through interactive visualizations of paper metadata, author networks, and category relationships.
-		</p>
-	</div>
+<svelte:head>
+	<title>arXiv Explorer — the shape of science</title>
+</svelte:head>
 
-	<!-- Stats row -->
-	<div class="mb-16 grid grid-cols-2 gap-4 sm:grid-cols-4">
-		<div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-			<div class="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-				{stats ? fmt(stats.total_papers) : "—"}
-			</div>
-			<div class="text-sm text-slate-500 dark:text-slate-400">Papers</div>
+<div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+	<!-- Hero -->
+	<header class="mb-14">
+		<p class="kicker mb-5">arXiv metadata · 1991 → 2026</p>
+		<h1 class="font-display max-w-3xl text-5xl leading-[1.04] font-bold tracking-tight text-ink sm:text-6xl">
+			The shape of <span class="text-accent">science</span>, one paper at a&nbsp;time.
+		</h1>
+		<p class="mt-6 max-w-xl text-base leading-relaxed text-soft">
+			Search millions of arXiv papers instantly, and explore the networks that connect
+			authors, categories, and three decades of research.
+		</p>
+		<div class="mt-8 flex flex-wrap items-center gap-4">
+			<a
+				href="/papers"
+				class="rounded-full bg-accent px-6 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-85"
+			>
+				Search papers
+			</a>
+			<a href="/about" class="kicker transition-colors hover:text-accent">
+				About the data ↗
+			</a>
 		</div>
-		<div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-			<div class="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-				{stats ? fmt(stats.authors) : "—"}
+	</header>
+
+	<!-- Stats band -->
+	<div class="mb-16 grid grid-cols-2 border-y border-line sm:grid-cols-4">
+		{#each statCells as cell, i}
+			<div class="px-5 py-6 {i > 0 ? 'border-l border-line max-sm:odd:border-l-0' : ''} {i >= 2 ? 'max-sm:border-t max-sm:border-line' : ''}">
+				<div class="font-display text-4xl tracking-tight text-ink">{cell.value}</div>
+				<div class="kicker mt-1.5">{cell.label}</div>
 			</div>
-			<div class="text-sm text-slate-500 dark:text-slate-400">Authors</div>
-		</div>
-		<div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-			<div class="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-				{stats ? fmt(stats.categories) : "—"}
-			</div>
-			<div class="text-sm text-slate-500 dark:text-slate-400">Categories</div>
-		</div>
-		<div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-			<div class="mb-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-				{stats ? fmt(stats.multi_author_papers) : "—"}
-			</div>
-			<div class="text-sm text-slate-500 dark:text-slate-400">Multi-author Papers</div>
-		</div>
+		{/each}
 	</div>
 
 	<!-- Category graph -->
-	<div class="mb-16 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-		<div class="mb-3 flex items-center gap-2 px-1">
-			<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-				</svg>
-			</div>
+	<section class="mb-16">
+		<div class="mb-4 flex items-baseline justify-between">
 			<div>
-				<h3 class="font-semibold text-slate-900 dark:text-slate-100">Category Graph</h3>
-				<p class="text-xs text-slate-500 dark:text-slate-400">Force-directed co-occurrence network of {stats ? stats.categories : ""} arXiv categories. Node size = paper count, color = domain.</p>
+				<p class="kicker mb-1.5">Figure 01 · Force-directed</p>
+				<h2 class="font-display text-2xl tracking-tight text-ink">Category network</h2>
 			</div>
+			<p class="hidden max-w-xs text-right text-xs leading-relaxed text-faint sm:block">
+				Co-occurrence of {stats ? stats.categories : ""} arXiv categories.
+				Node size = paper count, color = domain.
+			</p>
 		</div>
-		<CategoryGraph />
-	</div>
+		<div class="dot-grid overflow-hidden rounded-xl border border-line bg-panel">
+			<CategoryGraph />
+		</div>
+	</section>
 
 	<!-- Link cards -->
-	<div class="grid gap-6 sm:grid-cols-2">
-		<a href="/papers" class="group rounded-xl border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-700">
-			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-					<polyline points="14 2 14 8 20 8" />
-					<line x1="16" y1="13" x2="8" y2="13" />
-					<line x1="16" y1="17" x2="8" y2="17" />
-				</svg>
-			</div>
-			<h3 class="mb-2 font-semibold text-slate-900 dark:text-slate-100">Search Papers</h3>
-			<p class="text-sm text-slate-500 dark:text-slate-400">Search and filter through millions of arXiv papers.</p>
+	<div class="grid gap-5 sm:grid-cols-2">
+		<a
+			href="/papers"
+			class="group rounded-xl border border-line bg-panel p-6 transition-all hover:-translate-y-0.5 hover:border-accent/50"
+		>
+			<p class="mb-4 font-mono text-xs text-faint">01 · Search</p>
+			<h3 class="font-display mb-2 text-2xl tracking-tight text-ink">
+				Papers <span class="inline-block text-accent transition-transform group-hover:translate-x-1">→</span>
+			</h3>
+			<p class="text-sm leading-relaxed text-soft">
+				Full-text search across millions of titles and author lists, filtered by era.
+			</p>
 		</a>
 
-		<a href="/authors" class="group rounded-xl border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-700">
-			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-					<circle cx="9" cy="7" r="4" />
-					<path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-					<path d="M16 3.13a4 4 0 0 1 0 7.75" />
-				</svg>
-			</div>
-			<h3 class="mb-2 font-semibold text-slate-900 dark:text-slate-100">Author Network</h3>
-			<p class="text-sm text-slate-500 dark:text-slate-400">Visualize co-authorship networks and collaboration patterns.</p>
+		<a
+			href="/authors"
+			class="group rounded-xl border border-line bg-panel p-6 transition-all hover:-translate-y-0.5 hover:border-accent/50"
+		>
+			<p class="mb-4 font-mono text-xs text-faint">02 · Networks</p>
+			<h3 class="font-display mb-2 text-2xl tracking-tight text-ink">
+				Authors <span class="inline-block text-accent transition-transform group-hover:translate-x-1">→</span>
+			</h3>
+			<p class="text-sm leading-relaxed text-soft">
+				Co-authorship graphs and collaboration patterns across the corpus.
+			</p>
 		</a>
 	</div>
 </div>

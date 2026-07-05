@@ -3,7 +3,7 @@
   import { base } from "$app/paths";
   import * as d3 from "d3";
 
-  interface CategoryNode {
+  interface CategoryNode extends d3.SimulationNodeDatum {
     id: string;
     label: string;
     domain: string;
@@ -12,9 +12,7 @@
     color: string;
   }
 
-  interface CategoryEdge {
-    source: string;
-    target: string;
+  interface CategoryEdge extends d3.SimulationLinkDatum<CategoryNode> {
     weight: number;
   }
 
@@ -45,7 +43,9 @@
     if (!data || !svgEl) return;
     const w = svgEl.clientWidth || containerEl?.clientWidth || 800;
     const h = Math.max(400, Math.min(600, w * 0.55));
-    renderGraph(data, svgEl, w, h);
+    // Snapshot: d3 mutates nodes (x/y each tick); mutating the $state proxy
+    // would re-trigger this effect and wipe the SVG in an endless loop
+    renderGraph($state.snapshot(data) as CategoryGraphData, svgEl, w, h);
   });
 
   function renderGraph(graph: CategoryGraphData, svg: SVGSVGElement, w: number, h: number) {
@@ -53,19 +53,31 @@
 
     d3.select(svg).selectAll("*").remove();
 
+    // Static layout: run the simulation to convergence synchronously, then
+    // draw once. No per-frame rAF work, and the graph appears fully settled.
     const simulation = d3.forceSimulation(graph.nodes)
       .force("link", d3.forceLink(graph.edges).id((d: any) => d.id).distance(60))
       .force("charge", d3.forceManyBody().strength(-120))
       .force("center", d3.forceCenter(w / 2, h / 2))
-      .force("collision", d3.forceCollide().radius(8));
+      .force("collision", d3.forceCollide().radius(8))
+      .stop();
 
-    const link = d3.select(svg).append("g")
+    const ticks = Math.ceil(
+      Math.log(simulation.alphaMin()) / Math.log(1 - simulation.alphaDecay()),
+    );
+    simulation.tick(ticks);
+
+    d3.select(svg).append("g")
       .selectAll("line")
       .data(graph.edges)
       .join("line")
-      .attr("stroke", "#4a5568")
+      .attr("stroke", "var(--faint)")
       .attr("stroke-width", (d) => Math.max(0.5, Math.log(d.weight) / 3))
-      .attr("stroke-opacity", 0.3);
+      .attr("stroke-opacity", 0.35)
+      .attr("x1", (d: any) => d.source.x)
+      .attr("y1", (d: any) => d.source.y)
+      .attr("x2", (d: any) => d.target.x)
+      .attr("y2", (d: any) => d.target.y);
 
     const node = d3.select(svg).append("g")
       .selectAll("circle")
@@ -73,37 +85,29 @@
       .join("circle")
       .attr("r", (d) => Math.max(4, Math.sqrt(d.weight) / 15))
       .attr("fill", (d) => d.color)
-      .attr("stroke", "#1a1a2e")
+      .attr("stroke", "var(--paper)")
       .attr("stroke-width", 1)
       .attr("cursor", "pointer")
-      .append("title")
+      .attr("cx", (d: any) => d.x)
+      .attr("cy", (d: any) => d.y);
+
+    // append("title") returns the <title> selection — keep it off `node`
+    node.append("title")
       .text((d) => `${d.label} (${d.weight.toLocaleString()} papers)`);
-
-    simulation.on("tick", () => {
-      link
-        .attr("x1", (d: any) => d.source.x)
-        .attr("y1", (d: any) => d.source.y)
-        .attr("x2", (d: any) => d.target.x)
-        .attr("y2", (d: any) => d.target.y);
-
-      node
-        .attr("cx", (d: any) => d.x)
-        .attr("cy", (d: any) => d.y);
-    });
   }
 </script>
 
 <div bind:this={containerEl} class="w-full">
   {#if loading}
     <div class="flex h-[450px] items-center justify-center">
-      <div class="animate-pulse text-slate-500 dark:text-slate-400">Loading graph…</div>
+      <div class="kicker animate-pulse">Loading graph…</div>
     </div>
   {:else if error}
-    <div class="flex h-[450px] items-center justify-center text-red-400">
+    <div class="flex h-[450px] items-center justify-center text-sm text-accent">
       Failed to load: {error}
-      <button onclick={() => location.reload()} class="ml-2 underline hover:text-red-300">Retry</button>
+      <button onclick={() => location.reload()} class="ml-2 underline underline-offset-2">Retry</button>
     </div>
-  {:else}
+  {:else if data}
     <svg
       bind:this={svgEl}
       class="h-[450px] w-full sm:h-[500px]"

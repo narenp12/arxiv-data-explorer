@@ -4,7 +4,7 @@
     {
       "name": "data",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["http-server", "static/data", "-p", "8082", "--cors", "-c-1"],
+      "runtimeArgs": ["http-server", ".", "-p", "8082", "--cors", "-c-1"],
       "port": 8082
     },
     {

@@ -1,12 +1,77 @@
 @import "tailwindcss";
 
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist/wght-italic.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
 @variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens — the ONLY colors allowed in markup.
+ * Light = cool neutral, dark = deep off-black. Accent = arXiv red.
+ * Components use bg-paper / bg-panel / text-ink / text-soft / text-faint /
+ * border-line / text-accent and automatically follow the theme.
+ */
+:root {
+	--paper: #f4f4f5;
+	--panel: #ffffff;
+	--ink: #18181b;
+	--soft: #71717a;
+	--faint: #a1a1aa;
+	--line: #e4e4e7;
+	--accent: #b31b1b;
+}
+
+.dark {
+	--paper: #09090b;
+	--panel: #18181b;
+	--ink: #fafafa;
+	--soft: #a1a1aa;
+	--faint: #52525b;
+	--line: #27272a;
+	--accent: #ff5d52;
+}
+
+@theme inline {
+	--font-display: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+
+	--color-paper: var(--paper);
+	--color-panel: var(--panel);
+	--color-ink: var(--ink);
+	--color-soft: var(--soft);
+	--color-faint: var(--faint);
+	--color-line: var(--line);
+	--color-accent: var(--accent);
+}
 
 @layer base {
 	html {
 		@apply antialiased;
+		scrollbar-gutter: stable;
 	}
 	body {
-		@apply min-h-screen bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100;
+		@apply min-h-screen bg-paper font-sans text-ink;
 	}
+	::selection {
+		background: var(--accent);
+		color: #fff;
+	}
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+}
+
+/* Uppercase mono micro-label */
+@utility kicker {
+	@apply font-mono text-[11px] uppercase tracking-[0.18em] text-soft;
+}
+
+/* Subtle dot-grid backdrop for data panels */
+@utility dot-grid {
+	background-image: radial-gradient(var(--line) 1px, transparent 1px);
+	background-size: 22px 22px;
 }
