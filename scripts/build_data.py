@@ -201,6 +201,83 @@ def build_category_graph(df: pl.DataFrame) -> dict:
     }
 
 
+def build_category_hierarchy(df: pl.DataFrame) -> dict:
+    exploded = df.select(
+        pl.col("categories").str.split(" "),
+    ).explode("categories").with_columns(
+        pl.col("categories").replace_strict(
+            list(CATEGORY_ALIASES.keys()),
+            list(CATEGORY_ALIASES.values()),
+            default=pl.col("categories"),
+        ).alias("categories")
+    )
+
+    counts = exploded.group_by("categories").agg(
+        pl.len().alias("count")
+    ).sort("count", descending=True)
+
+    domains: dict[str, dict] = {}
+    for row in counts.iter_rows(named=True):
+        cat = row["categories"]
+        cnt = row["count"]
+        parts = cat.split(".")
+        dom = parts[0]
+        if dom not in domains:
+            domains[dom] = {
+                "id": dom,
+                "label": DOMAIN_NAMES.get(dom, dom),
+                "color": DOMAIN_COLORS.get(dom, "#999999"),
+                "papers": 0,
+                "subcategories": [],
+            }
+        domains[dom]["papers"] += cnt
+        if len(parts) > 1:
+            domains[dom]["subcategories"].append({
+                "id": cat,
+                "label": cat,
+                "papers": cnt,
+            })
+
+    for d in domains.values():
+        d["subcategories"].sort(key=lambda x: -x["papers"])
+
+    return {
+        "domains": sorted(domains.values(), key=lambda x: -x["papers"]),
+        "total_papers": len(df),
+        "total_categories": len(counts),
+    }
+
+
+def build_network_stats(df: pl.DataFrame) -> dict:
+    solo = df.filter(
+        pl.col("authors_parsed").list.len() == 1
+    ).select(pl.len()).item()
+
+    multi_cat = df.filter(
+        pl.col("categories").str.split(" ").list.len() > 1
+    ).select(pl.len()).item()
+
+    return {
+        "total_papers": len(df),
+        "single_author_papers": int(solo),
+        "multi_author_papers": len(df) - int(solo),
+        "multi_category_papers": int(multi_cat),
+        "categories": len(df["categories"].str.split(" ").explode().unique()),
+        "authors": len(
+            df.select(
+                pl.col("authors_parsed")
+                .list.eval(
+                    (pl.element().list.get(1, null_on_oob=True).fill_null("")
+                     + " "
+                     + pl.element().list.get(0, null_on_oob=True).fill_null(""))
+                    .str.strip_chars()
+                )
+                .alias("full_name")
+            ).explode("full_name").unique()
+        ),
+    }
+
+
 def build_author_graph(df: pl.DataFrame) -> dict:
     name_expr = (
         pl.element().list.get(1, null_on_oob=True).fill_null("")
@@ -340,6 +417,16 @@ if __name__ == "__main__":
     cat_graph = build_category_graph(df)
     (DATA_DIR / "category_graph.json").write_text(json.dumps(cat_graph, separators=(",", ":")))
     print(f"  {cat_graph['metadata']['total_nodes']} nodes, {cat_graph['metadata']['total_edges']} edges")
+
+    print("Building category hierarchy\u2026")
+    hierarchy = build_category_hierarchy(df)
+    (DATA_DIR / "category_hierarchy.json").write_text(json.dumps(hierarchy, separators=(",", ":")))
+    print(f"  {len(hierarchy['domains'])} domains")
+
+    print("Building network stats\u2026")
+    stats = build_network_stats(df)
+    (DATA_DIR / "network_stats.json").write_text(json.dumps(stats, separators=(",", ":")))
+    print(f"  {stats['total_papers']:,} papers, {stats['authors']:,} authors")
 
     print("Building author graph\u2026")
     author_graph = build_author_graph(df)

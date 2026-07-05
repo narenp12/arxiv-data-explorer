@@ -1,0 +1,22 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"mcp": {
+		"jcodemunch": {
+			"type": "local",
+			"command": ["jcodemunch-mcp", "serve"],
+			"enabled": true
+		},
+		"polymath": {
+			"type": "local",
+			"command": [
+				"node",
+				"/Users/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/mcp-server/dist/index.js"
+			],
+			"enabled": true,
+			"env": {
+				"CC_POLYMATH_SKILLS_DIR": "/Users/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/skills"
+			}
+		}
+	},
+	"instructions": ["AGENTS.md", "CLAUDE.md"]
+}
