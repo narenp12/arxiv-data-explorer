@@ -63,6 +63,7 @@
 
 	async function doSearch() {
 		error = null;
+		searching = true;
 		const seq = ++requestSeq;
 		const catMatch = query.trim().match(/^cat:(\S+)$/i);
 		try {
