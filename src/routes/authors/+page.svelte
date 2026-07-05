@@ -57,7 +57,7 @@
 		<div class="divide-y divide-outline/20 border-t border-outline/30">
 			{#each authors as author, i}
 				<a
-					href="/authors/{encodeURIComponent(author.name)}"
+					href="{base}/authors/{encodeURIComponent(author.name)}"
 					class="group flex items-center gap-4 px-3 py-3 transition-colors hover:bg-surface-container-low"
 				>
 					<span class="w-8 text-right font-mono text-xs text-outline">{i + 1}</span>

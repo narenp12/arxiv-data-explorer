@@ -9,6 +9,7 @@ export interface PaperResult {
 	id: string;
 	title: string;
 	authors: string;
+	authorsWithIds: { name: string; authorId: string }[];
 	year: number | null;
 	citationCount: number;
 	isArxiv: boolean;
@@ -114,10 +115,15 @@ export async function searchPapers(
 	const results: PaperResult[] = (data.data ?? []).map((d: Record<string, unknown>) => {
 		const ext = (d as { externalIds?: Record<string, string> }).externalIds;
 		const paperId = (d as { paperId?: string }).paperId ?? "";
+		const authors = (d as { authors?: { name: string; authorId?: string }[] }).authors ?? [];
 		return {
 			id: arxivId(d) || paperId,
 			title: (d as { title?: string }).title ?? "",
 			authors: authorList(d),
+			authorsWithIds: authors.map((a) => ({
+				name: a.name,
+				authorId: a.authorId ?? "",
+			})),
 			year: (d as { year?: number | null }).year ?? null,
 			citationCount: (d as { citationCount?: number }).citationCount ?? 0,
 			isArxiv: Boolean(ext?.ArXiv),
@@ -166,6 +172,7 @@ export async function searchArxivCategory(
 			id,
 			title,
 			authors,
+			authorsWithIds: [],
 			year: year && !Number.isNaN(year) ? year : null,
 			citationCount: 0,
 			isArxiv: true,

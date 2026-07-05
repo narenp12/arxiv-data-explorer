@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { base } from "$app/paths";
+	import { goto } from "$app/navigation";
 	import type { PaperResult } from "$lib/utils/db";
 	import { readingList } from "$lib/stores/saved.svelte";
 
@@ -17,6 +19,12 @@
 			isArxiv: paper.isArxiv,
 		});
 	}
+
+	function gotoAuthor(e: MouseEvent, authorId: string) {
+		e.preventDefault();
+		e.stopPropagation();
+		goto(`${base}/authors/${authorId}`);
+	}
 </script>
 
 <a
@@ -32,7 +40,19 @@
 		{/if}
 	</div>
 	<div class="flex items-baseline gap-3 font-mono text-xs text-on-surface-variant">
-		<span class="truncate">{paper.authors}</span>
+		<span class="truncate">
+			{#each paper.authorsWithIds as a, i}
+				{#if a.authorId}
+					<button
+						onclick={(e) => gotoAuthor(e, a.authorId)}
+						class="inline text-xs hover:text-primary transition-colors"
+					>{a.name}</button>
+				{:else}
+					<span>{a.name}</span>
+				{/if}
+				{#if i < paper.authorsWithIds.length - 1}, {/if}
+			{/each}
+		</span>
 		{#if paper.year}
 			<span class="shrink-0 text-outline">· {paper.year}</span>
 		{/if}
