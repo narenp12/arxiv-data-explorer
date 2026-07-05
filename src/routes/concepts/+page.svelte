@@ -24,31 +24,31 @@
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
 	<header class="mb-10 border-l-4 border-primary pl-8">
-		<p class="label-caps mb-3 text-secondary">OpenAlex concept hierarchy</p>
+		<p class="label-caps mb-3 text-on-surface-variant">OpenAlex concept hierarchy</p>
 		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">
 			Browse by concept
 		</h1>
 	</header>
 
 	{#if loading}
-		<div class="flex items-center gap-2 text-secondary py-8">
-			<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-			<span class="text-sm">Loading concepts…</span>
+		<div class="label-caps flex items-center gap-2 py-8">
+			<span class="live-dot animate-pulse"></span>
+			Loading concepts…
 		</div>
 	{:else if topConcepts.length === 0}
-		<p class="text-secondary text-sm">No concepts loaded. OpenAlex might be unavailable.</p>
+		<p class="font-mono text-sm text-on-surface-variant">No concepts loaded. OpenAlex might be unavailable.</p>
 	{:else}
-		<p class="text-xs text-secondary mb-6 uppercase tracking-wider">
+		<p class="label-caps mb-6">
 			Top-level research fields — click to explore sub-concepts
 		</p>
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-px bg-outline/20">
 			{#each topConcepts as concept}
 				<a
 					href={`${base}/concepts/${concept.id}`}
-					class="block rounded border border-outline bg-surface-container px-4 py-3 hover:bg-surface-container-low transition-colors"
+					class="block bg-surface-container px-4 py-3 transition-colors hover:bg-surface-container-low"
 				>
-					<span class="text-sm font-bold text-on-surface">{concept.name}</span>
-					<span class="block text-xs text-secondary mt-1">
+					<span class="font-mono text-sm font-bold text-on-surface">{concept.name}</span>
+					<span class="font-mono text-xs text-on-surface-variant ml-2">
 						{concept.worksCount.toLocaleString()} works
 					</span>
 				</a>

@@ -74,42 +74,42 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
-	<nav class="mb-6 text-xs text-secondary">
-		<a href="{base}/concepts" class="hover:text-primary transition-colors">Concepts</a>
-		<span class="mx-2">/</span>
+	<nav class="label-caps mb-6">
+		<a href="{base}/concepts" class="transition-colors hover:text-primary">Concepts</a>
+		<span class="text-outline mx-2">/</span>
 		<span class="text-on-surface">{concept?.name ?? "…"}</span>
 	</nav>
 
 	{#if loading}
-		<div class="flex items-center gap-2 text-secondary py-8">
-			<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-			<span class="text-sm">Loading…</span>
+		<div class="label-caps flex items-center gap-2 py-8">
+			<span class="live-dot animate-pulse"></span>
+			Loading…
 		</div>
 	{:else if !concept}
-		<p class="text-secondary text-sm">Concept not found.</p>
+		<p class="font-mono text-sm text-on-surface-variant">Concept not found.</p>
 	{:else}
 		<header class="mb-8 border-l-4 border-primary pl-8">
-			<p class="label-caps mb-3 text-secondary">Concept</p>
+			<p class="label-caps mb-3">Concept</p>
 			<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">
 				{concept.name}
 			</h1>
 			{#if concept.description}
-				<p class="text-sm text-secondary mt-3 max-w-2xl">{concept.description}</p>
+				<p class="font-mono text-sm text-on-surface-variant mt-3 max-w-2xl">{concept.description}</p>
 			{/if}
-			<p class="text-xs text-secondary mt-2">{concept.worksCount.toLocaleString()} works</p>
+			<p class="font-mono text-xs text-on-surface-variant mt-2">{concept.worksCount.toLocaleString()} works</p>
 		</header>
 
 		{#if subConcepts.length > 0}
 			<section class="mb-10">
 				<h2 class="font-display text-xl font-bold text-on-surface mb-4">Sub-concepts</h2>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-px bg-outline/20">
 					{#each subConcepts as sc}
 						<a
 							href="{base}/concepts/{sc.id}"
-							class="block rounded border border-outline bg-surface-container px-3 py-2 hover:bg-surface-container-low transition-colors"
+							class="block bg-surface-container px-3 py-2 transition-colors hover:bg-surface-container-low"
 						>
-							<span class="text-sm text-on-surface">{sc.name}</span>
-							<span class="text-xs text-secondary ml-2">({sc.worksCount.toLocaleString()})</span>
+							<span class="font-mono text-sm text-on-surface">{sc.name}</span>
+							<span class="font-mono text-xs text-on-surface-variant ml-2">({sc.worksCount.toLocaleString()})</span>
 						</a>
 					{/each}
 				</div>
@@ -119,21 +119,21 @@
 		<section>
 			<h2 class="font-display text-xl font-bold text-on-surface mb-4">Top papers</h2>
 			{#if works.length === 0}
-				<p class="text-sm text-secondary">No papers found for this concept.</p>
+				<p class="font-mono text-sm text-on-surface-variant">No papers found for this concept.</p>
 			{:else}
-				<div class="divide-y divide-outline-dim">
+				<div class="divide-y divide-outline/20">
 					{#each works as w}
 						<div class="py-3">
 							{#if w.isArxiv}
-								<a href="{base}/papers/{w.id}" class="text-sm font-bold text-on-surface hover:text-primary transition-colors">
+								<a href="{base}/papers/{w.id}" class="font-mono text-sm font-bold text-on-surface transition-colors hover:text-primary">
 									{w.title}
 								</a>
 							{:else}
-								<a href={w.openalexUrl} target="_blank" rel="noopener noreferrer" class="text-sm font-bold text-on-surface hover:text-primary transition-colors">
+								<a href={w.openalexUrl} target="_blank" rel="noopener noreferrer" class="font-mono text-sm font-bold text-on-surface transition-colors hover:text-primary">
 									{w.title}
 								</a>
 							{/if}
-							<p class="text-xs text-secondary mt-1">
+							<p class="font-mono text-xs text-on-surface-variant mt-1">
 								{w.authors}{#if w.year} · {w.year}{/if}
 								{#if !w.isArxiv}<span class="text-outline"> · openalex.org ↗</span>{/if}
 							</p>

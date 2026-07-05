@@ -118,7 +118,7 @@
 		role="presentation"
 	></div>
 	<div
-		class="fixed top-[15vh] left-1/2 z-[71] w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 border border-outline/30 bg-surface-container shadow-[0_0_40px_rgba(0,0,0,0.3)]"
+		class="fixed top-[15vh] left-1/2 z-[71] w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 border border-outline/30 bg-surface-container" style="box-shadow: var(--shadow-elevated)"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Command palette"

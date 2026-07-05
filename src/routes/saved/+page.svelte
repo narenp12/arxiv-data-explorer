@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { readingList } from "$lib/stores/saved.svelte";
+	import { base } from "$app/paths";
 
 	function exportBibtex() {
 		const blob = new Blob([readingList.toBibtex()], { type: "application/x-bibtex" });
@@ -26,7 +27,7 @@
 		{#if readingList.papers.length > 0}
 			<button
 				onclick={exportBibtex}
-				class="border border-outline/20 bg-surface-container px-5 py-2.5 font-mono text-xs font-bold text-on-surface transition-colors hover:border-primary hover:text-primary"
+				class="border border-outline/20 bg-surface-container px-5 py-2.5 font-mono text-xs font-bold text-on-surface transition-colors hover:border-primary hover:text-primary active:translate-y-px"
 			>
 				EXPORT .BIB ({readingList.papers.length})
 			</button>
@@ -34,14 +35,14 @@
 	</header>
 
 	{#if readingList.papers.length === 0}
-		<div class="dot-matrix border border-outline/20 bg-surface-container px-6 py-20 text-center">
+		<div class="border border-outline/20 bg-surface-container px-6 py-20 text-center">
 			<p class="font-display text-2xl font-bold text-on-surface">Nothing saved yet</p>
 			<p class="mt-3 font-mono text-sm text-on-surface-variant">
 				Hit the bookmark on any search result to build a reading list.
 				It lives in this browser — no account needed.
 			</p>
 			<a
-				href="/papers"
+				href="{base}/papers"
 				class="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-mono text-xs font-bold text-surface transition-all hover:opacity-85 active:translate-y-px"
 			>
 				SCAN PAPERS →
@@ -52,7 +53,7 @@
 			{#each readingList.papers as paper (paper.id)}
 				<div class="group relative border-b border-outline/10 py-3.5 pr-10 transition-colors hover:bg-surface-container-low">
 					<a
-						href={paper.isArxiv ? `/papers/${paper.id}` : `https://www.semanticscholar.org/paper/${paper.id}`}
+						href={paper.isArxiv ? `${base}/papers/${paper.id}` : `https://www.semanticscholar.org/paper/${paper.id}`}
 						target={paper.isArxiv ? undefined : "_blank"}
 						rel={paper.isArxiv ? undefined : "noopener noreferrer"}
 						class="mb-0.5 block font-mono text-sm leading-snug text-on-surface transition-colors group-hover:text-primary"

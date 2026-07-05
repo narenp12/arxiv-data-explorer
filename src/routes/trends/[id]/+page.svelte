@@ -11,6 +11,7 @@
 		type CausalEdge,
 		type DynamicsData,
 	} from "$lib/utils/trends";
+	import { categoryLabel } from "$lib/utils/categories";
 
 	let detail = $state<CausalCategory | null>(null);
 	let observed = $state<number[] | null>(null);
@@ -140,7 +141,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
-	<a href="/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
+	<a href="{base}/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-20">
@@ -151,13 +152,14 @@
 		<div class="py-20 text-center">
 			<p class="font-display text-2xl font-bold text-on-surface">Not found</p>
 			<p class="label-caps mt-2">{error}</p>
-			<a href="/trends" class="label-caps mt-4 inline-block text-primary underline underline-offset-4 decoration-primary/30">← Back to trends</a>
+			<a href="{base}/trends" class="label-caps mt-4 inline-block text-primary underline underline-offset-4 decoration-primary/30">← Back to trends</a>
 		</div>
 	{:else}
 		<header class="mb-8 flex flex-wrap items-end justify-between gap-4 border-l-4 border-primary pl-8">
 			<div>
 				<p class="label-caps mb-3">Category dynamics · since {startMonth}</p>
 				<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface">{$page.params.id}</h1>
+				<p class="mt-0.5 font-mono text-sm text-on-surface-variant">{categoryLabel($page.params.id ?? "")}</p>
 				{#if detail}
 					<p class="mt-2 font-mono text-sm text-on-surface-variant">
 						<span class="font-bold" class:text-signal-green={detail.trend > 0} class:text-warning-red={detail.trend < 0}>
@@ -172,7 +174,7 @@
 				{/if}
 			</div>
 			<a
-				href="/trends/compare?ids={$page.params.id}"
+				href="{base}/trends/compare?ids={$page.params.id}"
 				class="border border-outline/20 bg-surface-container px-4 py-2 font-mono text-xs font-bold text-on-surface-variant transition-colors hover:border-primary hover:text-primary"
 			>
 				+ COMPARE
@@ -201,9 +203,10 @@
 					{:else}
 						<div class="space-y-px">
 							{#each incomingEdges.slice(0, 15) as edge}
-								<a href="/trends/{edge.source}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
+								<a href="{base}/trends/{edge.source}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
 									<div class="flex items-baseline justify-between">
 										<span class="font-mono text-sm font-bold text-primary">{edge.source}</span>
+										<span class="font-mono text-[10px] text-on-surface-variant truncate ml-2">{categoryLabel(edge.source)}</span>
 										<span class="font-mono text-xs" class:text-signal-green={edge.weight > 0} class:text-warning-red={edge.weight < 0}>
 											{edge.weight > 0 ? "+" : ""}{edge.weight.toFixed(3)}
 										</span>
@@ -225,9 +228,10 @@
 					{:else}
 						<div class="space-y-px">
 							{#each outgoingEdges.slice(0, 15) as edge}
-								<a href="/trends/{edge.target}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
+								<a href="{base}/trends/{edge.target}" class="block border border-outline/20 bg-surface-container p-3 transition-colors hover:neon-border">
 									<div class="flex items-baseline justify-between">
 										<span class="font-mono text-sm font-bold text-primary">{edge.target}</span>
+										<span class="font-mono text-[10px] text-on-surface-variant truncate ml-2">{categoryLabel(edge.target)}</span>
 										<span class="font-mono text-xs" class:text-signal-green={edge.weight > 0} class:text-warning-red={edge.weight < 0}>
 											{edge.weight > 0 ? "+" : ""}{edge.weight.toFixed(3)}
 										</span>

@@ -38,22 +38,26 @@
 
 	/* Feedback */
 	--selection-bg: #00dbe7;
+
+	--shadow-elevated: 0 0 40px rgba(0, 0, 0, 0.12);
+	--glow-primary: 0 0 10px rgba(0, 124, 138, 0.15);
+	--glow-primary-inset: inset 0 0 5px rgba(0, 124, 138, 0.05);
 }
 
 .dark {
-	--surface: #0a0a0a;
-	--surface-container: #181818;
-	--surface-container-low: #1c1b1b;
-	--surface-container-high: #2a2a2a;
-	--surface-container-highest: #353534;
+	--surface: #0c0c0c;
+	--surface-container: #1a1a1a;
+	--surface-container-low: #242424;
+	--surface-container-high: #303030;
+	--surface-container-highest: #3a3a3a;
 
 	--on-surface: #e5e2e1;
-	--on-surface-variant: #b9cacb;
+	--on-surface-variant: #a0b0b1;
 
-	--outline: #849495;
+	--outline: #5a7a7b;
 	--outline-variant: #3a494b;
 
-	--label: #849495;
+	--label: #7a8a8b;
 
 	--primary: #00dbe7;
 	--primary-container: #00f2ff;
@@ -64,13 +68,20 @@
 	--warning-red: #ef4444;
 
 	--selection-bg: #00dbe7;
+
+	--shadow-elevated: 0 0 40px rgba(0, 0, 0, 0.45);
+	--glow-primary: 0 0 10px rgba(0, 219, 231, 0.25);
+	--glow-primary-inset: inset 0 0 5px rgba(0, 219, 231, 0.08);
 }
 
 @theme inline {
 	--font-display: "Playfair Display Variable", ui-serif, Georgia, serif;
 	--font-sans: "Space Mono", ui-monospace, "SF Mono", monospace;
 	--font-mono: "Space Mono", ui-monospace, "SF Mono", monospace;
-	--font-body: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-body: "Space Mono", ui-monospace, "SF Mono", monospace;
+
+	/* Label caps scale — from DESIGN.md §3 */
+	--font-label: "Space Mono", ui-monospace, "SF Mono", monospace;
 
 	--color-surface: var(--surface);
 	--color-surface-container: var(--surface-container);
@@ -95,6 +106,7 @@
 	html {
 		@apply antialiased;
 		scrollbar-gutter: stable;
+		transition: background-color 0.3s, color 0.3s;
 	}
 
 	body {
@@ -122,7 +134,7 @@
 		background: transparent;
 	}
 	::-webkit-scrollbar-thumb {
-		background: var(--outline-variant);
+		background: var(--label);
 		border-radius: 10px;
 	}
 	::-webkit-scrollbar-thumb:hover {
@@ -136,12 +148,15 @@
 
 /* Uppercase mono micro-label */
 @utility label-caps {
-	@apply font-mono text-[11px] uppercase tracking-[0.15em] text-label font-bold;
+	@apply font-mono text-[11px] uppercase tracking-[0.15em] font-bold;
 }
 
 /* Skeleton placeholder for loading data cells */
 @utility skeleton {
-	@apply animate-pulse bg-surface-container-high;
+	@apply bg-surface-container-high;
+	@media (prefers-reduced-motion: no-preference) {
+		@apply animate-pulse;
+	}
 }
 
 /* Data readout value */
@@ -149,7 +164,7 @@
 	@apply font-mono text-3xl tracking-tight text-on-surface font-bold;
 }
 
-/* Blueprint dot-matrix backdrop */
+/* Blueprint dot-matrix backdrop — error page only (non-content context) */
 @utility dot-matrix {
 	background-image: radial-gradient(var(--outline) 1px, transparent 1px);
 	background-size: 24px 24px;
@@ -157,19 +172,19 @@
 
 /* Glass panel for floating data overlays */
 .dark .glass-panel {
-	background: rgba(10, 10, 10, 0.85);
-	border-color: rgba(255, 255, 255, 0.15);
+	background: color-mix(in srgb, var(--surface-container) 90%, transparent);
+	border-color: rgba(255, 255, 255, 0.12);
 }
 
 .glass-panel {
-	background: rgba(255, 255, 255, 0.85);
-	border-color: rgba(0, 0, 0, 0.1);
+	background: color-mix(in srgb, var(--surface-container) 85%, transparent);
+	border-color: rgba(0, 0, 0, 0.08);
 }
 
 /* Neon glow border — active state only */
 @utility neon-border {
 	border-color: var(--primary);
-	box-shadow: 0 0 10px rgba(0, 219, 231, 0.2), inset 0 0 5px rgba(0, 219, 231, 0.05);
+	box-shadow: var(--glow-primary), var(--glow-primary-inset);
 }
 
 /* Neon glow border — secondary variant */
@@ -180,7 +195,8 @@
 
 /* Pulsing glow dot for live/active indicators */
 @utility live-dot {
-	@apply w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)];
+	@apply w-2 h-2 rounded-full bg-primary;
+	box-shadow: 0 0 8px var(--primary);
 }
 
 /*

@@ -97,7 +97,7 @@
 							<div class="grid grid-cols-1 gap-px sm:grid-cols-2">
 								{#each domain.subcategories as cat}
 									<a
-										href="/papers?q=cat:{encodeURIComponent(cat.id)}"
+										href="{base}/papers?q=cat:{encodeURIComponent(cat.id)}"
 										class="flex items-center justify-between px-3 py-1.5 transition-colors hover:bg-surface-container-low"
 									>
 										<span class="font-mono text-xs text-on-surface">{cat.label}</span>

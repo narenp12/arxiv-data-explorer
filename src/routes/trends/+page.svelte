@@ -4,6 +4,7 @@
 	import { goto } from "$app/navigation";
 	import * as d3 from "d3";
 	import { fmtAnnualPct, type CausalData, type CausalEdge } from "$lib/utils/trends";
+	import { categoryLabel } from "$lib/utils/categories";
 
 	interface GraphNode extends d3.SimulationNodeDatum {
 		id: string;
@@ -256,7 +257,7 @@
 					max="1"
 					step="0.01"
 					bind:value={minProb}
-					class="w-36 accent-(--primary)"
+					class="w-36 accent-[var(--primary)]"
 				/>
 				<span class="w-20 text-right">{visibleEdges.length} edges</span>
 			</label>
@@ -270,13 +271,16 @@
 			<div class="mt-4 border border-primary/40 bg-surface-container p-5 neon-border">
 				<div class="flex flex-wrap items-baseline justify-between gap-3">
 					<div>
-						<span class="font-mono text-lg font-bold text-primary">{selectedCat.id}</span>
+						<div>
+							<span class="font-mono text-lg font-bold text-primary">{selectedCat.id}</span>
+							<span class="ml-2 font-mono text-xs text-on-surface-variant">{categoryLabel(selectedCat.id)}</span>
+						</div>
 						<span class="ml-3 font-mono text-sm" class:text-signal-green={selectedCat.trend > 0} class:text-warning-red={selectedCat.trend < 0}>
 							{fmtAnnualPct(selectedCat.trend)}/yr
 						</span>
 					</div>
 					<div class="flex items-center gap-4">
-						<a href="/trends/{selectedCat.id}" class="font-mono text-xs font-bold text-primary underline underline-offset-4 decoration-primary/30">
+						<a href="{base}/trends/{selectedCat.id}" class="font-mono text-xs font-bold text-primary underline underline-offset-4 decoration-primary/30">
 							Open detail →
 						</a>
 						<button onclick={() => (selectedId = null)} class="label-caps transition-colors hover:text-primary">Clear</button>
@@ -287,7 +291,7 @@
 						<p class="label-caps mb-1.5">Driven by ({selectedIn.length})</p>
 						{#each selectedIn.slice(0, 5) as e}
 							<div class="flex justify-between py-0.5">
-								<a href="/trends/{e.source}" class="text-on-surface transition-colors hover:text-primary">{e.source}</a>
+								<a href="{base}/trends/{e.source}" class="text-on-surface transition-colors hover:text-primary">{e.source}</a>
 								<span class:text-signal-green={e.weight > 0} class:text-warning-red={e.weight < 0}>{e.weight > 0 ? "+" : ""}{e.weight.toFixed(2)}</span>
 							</div>
 						{:else}
@@ -298,7 +302,7 @@
 						<p class="label-caps mb-1.5">Drives ({selectedOut.length})</p>
 						{#each selectedOut.slice(0, 5) as e}
 							<div class="flex justify-between py-0.5">
-								<a href="/trends/{e.target}" class="text-on-surface transition-colors hover:text-primary">{e.target}</a>
+								<a href="{base}/trends/{e.target}" class="text-on-surface transition-colors hover:text-primary">{e.target}</a>
 								<span class:text-signal-green={e.weight > 0} class:text-warning-red={e.weight < 0}>{e.weight > 0 ? "+" : ""}{e.weight.toFixed(2)}</span>
 							</div>
 						{:else}
@@ -321,15 +325,17 @@
 
 		<div class="mt-8 grid grid-cols-1 gap-px bg-outline/20 sm:grid-cols-2 lg:grid-cols-3">
 			{#each [...data.categories].sort((a, b) => b.trend - a.trend).slice(0, 6) as cat}
-				<a href="/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
+				<a href="{base}/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
 					<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+					<div class="mt-0.5 font-mono text-[10px] text-on-surface-variant truncate">{categoryLabel(cat.id)}</div>
 					<div class="mt-1 font-mono text-2xl font-bold text-signal-green">{fmtAnnualPct(cat.trend)}</div>
 					<div class="label-caps mt-1 text-[10px]">annual growth</div>
 				</a>
 			{/each}
 			{#each [...data.categories].sort((a, b) => a.trend - b.trend).slice(0, 3) as cat}
-				<a href="/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
+				<a href="{base}/trends/{cat.id}" class="bg-surface p-5 transition-colors hover:bg-surface-container-low">
 					<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+					<div class="mt-0.5 font-mono text-[10px] text-on-surface-variant truncate">{categoryLabel(cat.id)}</div>
 					<div class="mt-1 font-mono text-2xl font-bold text-warning-red">{fmtAnnualPct(cat.trend)}</div>
 					<div class="label-caps mt-1 text-[10px]">annual growth</div>
 				</a>

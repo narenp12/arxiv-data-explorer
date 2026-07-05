@@ -4,10 +4,12 @@
 	import type { NetworkStats } from "$lib/types";
 	import CategoryGraph from "$lib/components/CategoryGraph.svelte";
 	import { fmtAnnualPct, sparklinePoints, type CausalData, type DynamicsData } from "$lib/utils/trends";
+	import { categoryLabel } from "$lib/utils/categories";
 
 	let stats = $state<NetworkStats | null>(null);
 	let error = $state(false);
 	let pulse = $state<{ id: string; trend: number; points: string }[]>([]);
+	let categoryCount = $state(0);
 
 	onMount(async () => {
 		try {
@@ -29,6 +31,7 @@
 			if (causalRes.ok && dynRes.ok) {
 				const causal: CausalData = await causalRes.json();
 				const dyn: DynamicsData = await dynRes.json();
+				categoryCount = causal.categories.length;
 				pulse = [...causal.categories]
 					.sort((a, b) => b.trend - a.trend)
 					.slice(0, 5)
@@ -67,7 +70,7 @@
 	<header class="mb-16 border-l-4 border-primary pl-8">
 		<p class="label-caps mb-4 flex items-center gap-2">
 			<span class="live-dot animate-pulse"></span>
-			ARXIV METADATA · 1991 → 2026
+			ARXIV METADATA · 1991 → {new Date().getFullYear()}
 		</p>
 		<h1 class="font-display max-w-4xl text-[clamp(2.5rem,5vw,4rem)] leading-[1.04] font-bold tracking-tight text-on-surface">
 			The shape of <span class="text-primary italic">science</span>,<br />one paper at a time.
@@ -78,12 +81,12 @@
 		</p>
 		<div class="mt-8 flex flex-wrap items-center gap-4">
 			<a
-				href="/papers"
+				href="{base}/papers"
 				class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-mono text-xs font-bold text-[#0a0a0a] transition-all hover:opacity-85 active:translate-y-px"
 			>
 				SCAN PAPERS →
 			</a>
-			<a href="/about" class="font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
+			<a href="{base}/about" class="font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
 				ABOUT THE DATA
 			</a>
 		</div>
@@ -113,14 +116,15 @@
 					<p class="label-caps mb-1">Field pulse · annual growth</p>
 					<h2 class="font-display text-2xl font-bold tracking-tight text-on-surface">Taking off right now</h2>
 				</div>
-				<a href="/takeoffs" class="font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
-					ALL 161 →
+				<a href="{base}/takeoffs" class="font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
+					ALL {categoryCount} →
 				</a>
 			</div>
 			<div class="grid grid-cols-2 gap-px bg-outline/20 sm:grid-cols-5">
 				{#each pulse as cat}
-					<a href="/trends/{cat.id}" class="group bg-surface px-4 py-5 transition-colors hover:bg-surface-container-low">
+					<a href="{base}/trends/{cat.id}" class="group bg-surface px-4 py-5 transition-colors hover:bg-surface-container-low">
 						<div class="font-mono text-xs font-bold text-primary">{cat.id}</div>
+						<div class="font-mono text-[9px] text-on-surface-variant truncate">{categoryLabel(cat.id)}</div>
 						<div class="mt-1 font-mono text-xl font-bold text-signal-green">{fmtAnnualPct(cat.trend)}</div>
 						<svg viewBox="0 0 120 32" class="mt-3 h-8 w-full" preserveAspectRatio="none" aria-hidden="true">
 							<polyline
@@ -151,7 +155,7 @@
 				Node size = paper count, color = domain.
 			</div>
 		</div>
-		<div class="overflow-hidden border border-outline/20 bg-surface-container dot-matrix opacity-90">
+		<div class="overflow-hidden border border-outline/20 bg-surface-container">
 			<CategoryGraph />
 		</div>
 	</section>
@@ -159,7 +163,7 @@
 	<!-- Link panels — border-top accent cards -->
 	<div class="grid gap-px bg-outline/20 sm:grid-cols-2">
 		<a
-			href="/papers"
+			href="{base}/papers"
 			class="group bg-surface px-6 py-8 transition-all hover:bg-surface-container-low"
 		>
 			<p class="label-caps mb-4 font-mono text-[11px] text-primary">01 · Search</p>
@@ -172,7 +176,7 @@
 		</a>
 
 		<a
-			href="/authors"
+			href="{base}/authors"
 			class="group bg-surface px-6 py-8 transition-all hover:bg-surface-container-low"
 		>
 			<p class="mb-4 font-mono text-[11px] text-primary">02 · Networks</p>

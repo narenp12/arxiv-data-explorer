@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from "$app/stores";
+	import { base } from "$app/paths";
 </script>
 
 <svelte:head>
@@ -22,12 +23,12 @@
 		</p>
 		<div class="mt-8 flex flex-wrap gap-4">
 			<a
-				href="/"
+				href="{base}/"
 				class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-mono text-xs font-bold text-surface transition-all hover:opacity-85 active:translate-y-px"
 			>
 				← BACK TO BASE
 			</a>
-			<a href="/papers" class="self-center font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
+			<a href="{base}/papers" class="self-center font-mono text-xs font-bold text-on-surface-variant transition-colors hover:text-primary">
 				SEARCH PAPERS
 			</a>
 		</div>

@@ -28,30 +28,30 @@
 		{ value: "Art", label: "Art" },
 	];
 
-	function dispatch() {
+	function emitFilters() {
 		onChange?.({ yearRange, fieldOfStudy, minCites });
 	}
 </script>
 
 <div class="flex flex-wrap gap-3 items-end mb-4">
 	<div class="flex flex-col gap-1">
-		<label class="label-caps text-xs text-secondary" for="year-range">Year range</label>
+		<label class="label-caps text-xs text-on-surface-variant" for="year-range">Year range</label>
 		<input
 			id="year-range"
 			type="text"
 			bind:value={yearRange}
-			placeholder="e.g. 2020-2024"
-			oninput={dispatch}
-			class="w-36 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+			placeholder="e.g. 2020-{new Date().getFullYear()}"
+			oninput={emitFilters}
+			class="w-36 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface placeholder:text-outline transition-colors"
 		/>
 	</div>
 	<div class="flex flex-col gap-1">
-		<label class="label-caps text-xs text-secondary" for="field-of-study">Field of study</label>
+		<label class="label-caps text-xs text-on-surface-variant" for="field-of-study">Field of study</label>
 		<select
 			id="field-of-study"
 			bind:value={fieldOfStudy}
-			onchange={dispatch}
-			class="w-44 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+			onchange={emitFilters}
+			class="w-44 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface transition-colors"
 		>
 			{#each S2_FIELDS as f}
 				<option value={f.value}>{f.label}</option>
@@ -59,15 +59,15 @@
 		</select>
 	</div>
 	<div class="flex flex-col gap-1">
-		<label class="label-caps text-xs text-secondary" for="min-cites">Min citations</label>
+		<label class="label-caps text-xs text-on-surface-variant" for="min-cites">Min citations</label>
 		<input
 			id="min-cites"
 			type="number"
 			min="0"
 			bind:value={minCites}
 			placeholder="0"
-			oninput={dispatch}
-			class="w-24 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface placeholder:text-outline focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+			oninput={emitFilters}
+			class="w-24 rounded border border-outline bg-surface-container px-2.5 py-1.5 text-sm text-on-surface placeholder:text-outline transition-colors"
 		/>
 	</div>
 </div>

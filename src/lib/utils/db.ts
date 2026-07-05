@@ -152,9 +152,10 @@ function parseArxivResponse(doc: Document): PaperResult[] {
 }
 
 function parseArxivTotal(doc: Document): number {
-	const totalResultsEl = Array.from(doc.getElementsByTagName("*")).find(
-		(el) => el.localName === "totalResults",
-	);
+	const totalResultsEl = doc.getElementsByTagNameNS(
+		"http://a9.com/-/spec/opensearch/1.1/",
+		"totalResults",
+	)[0];
 	if (totalResultsEl?.textContent) return parseInt(totalResultsEl.textContent, 10) || 0;
 	return 0;
 }

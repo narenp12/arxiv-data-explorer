@@ -53,13 +53,7 @@
 		fieldOfStudy = filters.fieldOfStudy;
 		minCites = filters.minCites;
 		offset = 0;
-		if (query.trim().length >= 2) {
-			clearTimeout(debounceTimer);
-			searching = true;
-			debounceTimer = setTimeout(() => doSearch(), 300);
-		} else {
-			syncUrl(query, 0);
-		}
+		syncUrl(query, 0);
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout>;
@@ -127,15 +121,17 @@
 			type="search"
 			placeholder="Search arXiv papers… (e.g. quantum computing)"
 			oninput={onInput}
+			onkeydown={(e) => e.key === "Enter" && doSearch()}
 			value={query}
-			class="w-full border-2 border-outline/30 bg-surface px-5 py-4 font-mono text-base text-on-surface transition-all placeholder:text-outline hover:border-outline/50 focus:border-primary focus:outline-none focus:shadow-[0_0_20px_rgba(0,219,231,0.12)]"
+			class="w-full border-2 border-outline/30 bg-surface px-5 py-4 font-mono text-base text-on-surface transition-all placeholder:text-outline hover:border-outline/50 focus:border-primary focus:shadow-[0_0_20px_rgba(0,219,231,0.12)]"
 		/>
-		{#if searching}
-			<div class="label-caps absolute top-1/2 right-5 -translate-y-1/2 flex items-center gap-1.5">
-				<span class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_6px_var(--primary)]"></span>
-				SEARCHING
-			</div>
-		{/if}
+			<button
+			onclick={() => doSearch()}
+			disabled={query.trim().length < 2 || searching}
+			class="absolute top-1/2 right-5 -translate-y-1/2 rounded bg-primary px-4 py-1.5 font-mono text-xs font-bold text-[#0a0a0a] transition-all hover:opacity-85 disabled:opacity-30 active:translate-y-px"
+		>
+			{searching ? "SEARCHING" : "SEARCH"}
+		</button>
 	</div>
 
 	<SearchFilters {yearRange} {fieldOfStudy} {minCites} onChange={onFilterChange} />
@@ -184,14 +180,14 @@
 				<button
 					onclick={prevPage}
 					disabled={offset <= 0}
-					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant"
+					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant active:translate-y-px"
 				>
 					← PREV
 				</button>
 				<button
 					onclick={nextPage}
 					disabled={offset + LIMIT >= total}
-					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant"
+					class="border border-outline/20 bg-surface-container px-5 py-2 font-mono text-xs text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30 disabled:hover:border-outline/20 disabled:hover:text-on-surface-variant active:translate-y-px"
 				>
 					NEXT →
 				</button>

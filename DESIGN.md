@@ -39,7 +39,7 @@ The aesthetic is dark-first (Obsidian & Neon Ink) with a secondary light theme (
 ## 3. Typography Rules
 
 - **Display / Headlines:** Playfair Display — Track-tight, controlled scale. Used for H1 page titles and section headers only (not for body content or list items).
-- **Body / UI / Data:** Space Mono — All functional UI, search results, data readouts, navigation, and body copy. Reinforces the terminal/blueprint aesthetic.
+- **Body / UI / Data / Labels:** Space Mono — All functional UI, search results, data readouts, navigation, labels, and body copy. Reinforces the terminal/blueprint aesthetic. Two-typeface stack (Playfair + Space Mono); no sans-serif fallback.
 - **Scale:**
   - Display (hero): `clamp(2.5rem, 5vw, 4rem)` — Homepage title only
   - Headline: `clamp(2rem, 4vw, 3rem)` — Page titles
@@ -48,7 +48,7 @@ The aesthetic is dark-first (Obsidian & Neon Ink) with a secondary light theme (
   - Label Caps: `0.75rem` (12px) uppercase `0.1em` tracking — Micro-labels
   - Data: `0.8125rem` (13px) — Data readouts
 - **Content Density:** Paper titles in result lists use `0.875rem` mono bold without extra spacing. Metadata (authors, year, citations) runs at `0.75rem` on the same line. No unnecessary line breaks between title and metadata.
-- **Banned:** Inter, Geist, generic system fonts for premium contexts. Generic serif fonts (Times New Roman, Georgia) banned — use Playfair Display exclusively for serif needs.
+- **Banned:** Inter, Geist, generic system fonts for premium contexts. Generic serif fonts (Times New Roman, Georgia) banned — use Playfair Display exclusively for serif needs. `--font-body` uses Space Mono, matching the terminal identity.
 
 ## 4. Component Stylings
 
@@ -82,7 +82,7 @@ The aesthetic is dark-first (Obsidian & Neon Ink) with a secondary light theme (
 1. **Content is the product.** Search results, paper details, tables, and graphs are the primary visual. Chrome (borders, headers, navigation) must not compete.
 2. **Dense lists over spaced cards.** Search results, author rankings, and category lists use compact vertical layouts with minimal padding between items. Scan through content quickly — don't make each item a destination.
 3. **One accent color only.** Ion Blue is the single accent for links, active states, and the header border accent. Phantom Violet is reserved for secondary data labeling only. Oversaturating with multiple colors dilutes the signal.
-4. **No atmospheric effects.** Scanline, glitch, crosshair grids, and dot-matrix backgrounds are removed. These don't communicate anything about the research data — they just call attention to the frame.
+4. **No atmospheric effects.** Scanline, glitch, crosshair grids, and dot-matrix backgrounds are removed from content areas. The error page is the sole exception — dot-matrix as a full-page backdrop matches the "terminal fault" tone there.
 5. **Search is the primary action.** On the Papers page, the search input uses `border-2` with heavier padding and larger font size. It should be the first thing a user sees and the most visually prominent element on the page.
 6. **Headlines frame, they don't decorate.** Playfair Display is used for page titles (H1) and section headers (H2) only. Never for body text, labels, or data values. Keep headline sizes proportional to the content they introduce.
 
@@ -95,7 +95,7 @@ The aesthetic is dark-first (Obsidian & Neon Ink) with a secondary light theme (
 - No neon/outer glow shadows on static elements — glow is reserved for active/focus states
 - No oversaturated accents — Ion Blue at #00dbe7 is the maximum saturation allowed
 - No custom mouse cursors
-- No atmospheric effects (scanlines, glitch text, crosshair overlays, dot-matrix backgrounds on content)
+- No atmospheric effects (scanlines, glitch text, crosshair overlays, dot-matrix backgrounds on content) — the error page is the sole exception: dot-matrix as a full-page background is acceptable there, consistent with the "terminal fault" tone
 - No 3-column equal card layouts — use asymmetric grids or 2-column zig-zag
 - No fake round numbers or percentages
 - No AI copywriting clichés ("Elevate", "Seamless", "Unleash", "Next-Gen", "Revolutionary")

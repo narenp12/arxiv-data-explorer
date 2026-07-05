@@ -36,7 +36,7 @@
 		<h2 class="font-display text-xl font-bold tracking-tight text-on-surface">Data</h2>
 		<p>
 			Source: <a href="https://www.kaggle.com/datasets/Cornell-University/arxiv" target="_blank" rel="noopener noreferrer" class="text-primary underline underline-offset-4 decoration-primary/30 hover:decoration-primary">Kaggle arXiv Dataset</a>
-			(Cornell University). Contains metadata for 2.99M arXiv papers (1991–2026).
+			(Cornell University). Contains metadata for 2.99M arXiv papers (1991–{new Date().getFullYear()}).
 			Precomputed network graphs and rankings are derived from this dataset.
 		</p>
 

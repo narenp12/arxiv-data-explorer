@@ -2,6 +2,7 @@
 	import { onMount } from "svelte";
 	import { base } from "$app/paths";
 	import { annualPct, fmtAnnualPct, type CausalData, type CausalCategory } from "$lib/utils/trends";
+	import { categoryLabel } from "$lib/utils/categories";
 
 	let data = $state<CausalData | null>(null);
 	let loading = $state(true);
@@ -126,7 +127,8 @@
 					{#each sorted.slice(offset, offset + PAGE_SIZE) as cat}
 						<tr class="transition-colors hover:bg-surface-container-low">
 							<td class="px-4 py-3">
-								<a href="/trends/{cat.id}" class="font-bold text-primary hover:underline underline-offset-4 decoration-primary/30">{cat.id}</a>
+								<a href="{base}/trends/{cat.id}" class="font-bold text-primary hover:underline underline-offset-4 decoration-primary/30">{cat.id}</a>
+								<div class="font-mono text-[10px] text-on-surface-variant">{categoryLabel(cat.id)}</div>
 							</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center gap-2">

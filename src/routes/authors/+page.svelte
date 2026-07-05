@@ -40,10 +40,10 @@
 	<section class="mb-10">
 		<div class="mb-3 flex items-baseline justify-between border-b border-outline/30 pb-2">
 			<div>
-				<p class="label-caps mb-1">Figure 01 · Force-directed</p>
+				<p class="label-caps mb-1">Figure 01 · Co-authorship network</p>
 				<h2 class="font-display text-xl font-bold tracking-tight text-on-surface">Co-authorship network</h2>
 			</div>
-			<p class="hidden font-mono text-[11px] text-on-surface-variant sm:block">Top 80 authors by paper count</p>
+			<p class="hidden font-mono text-[11px] text-on-surface-variant sm:block">{authors.length > 0 ? `Top ${authors.length} authors by paper count` : ""}</p>
 		</div>
 		<AuthorGraph />
 	</section>

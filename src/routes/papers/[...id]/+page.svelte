@@ -64,7 +64,7 @@
 
 <div class="mx-auto max-w-4xl px-4 py-14 sm:px-6 lg:px-8">
 	<a
-		href="/papers"
+		href="{base}/papers"
 		class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary"
 	>
 		← Back to search
@@ -115,7 +115,7 @@
 
 			<p class="mb-8 font-mono text-sm leading-relaxed text-on-surface-variant">
 				{#each detail.authors.split(", ") as author, i}
-					<a href="/papers?q={encodeURIComponent(author)}" class="transition-colors hover:text-primary">{author}</a>{i < detail.authors.split(", ").length - 1 ? ", " : ""}
+					<a href="{base}/papers?q={encodeURIComponent(author)}" class="transition-colors hover:text-primary">{author}</a>{i < detail.authors.split(", ").length - 1 ? ", " : ""}
 				{/each}
 			</p>
 

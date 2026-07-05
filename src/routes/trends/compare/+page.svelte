@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
-	import { replaceState } from "$app/navigation";
 	import { base } from "$app/paths";
+	import { replaceState } from "$app/navigation";
 	import * as d3 from "d3";
 	import { fmtAnnualPct, monthDate, type CausalData, type DynamicsData } from "$lib/utils/trends";
 
@@ -146,7 +146,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
-	<a href="/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
+	<a href="{base}/trends" class="label-caps mb-6 inline-flex items-center gap-1 transition-colors hover:text-primary">← Causal trends</a>
 
 	<header class="mb-10 border-l-4 border-primary pl-8">
 		<p class="label-caps mb-3">Overlay · up to {MAX_SERIES} categories</p>
@@ -195,13 +195,13 @@
 			{/if}
 
 			<label class="ml-auto flex items-center gap-2 font-mono text-xs text-on-surface-variant">
-				<input type="checkbox" bind:checked={logScale} class="accent-(--primary)" />
+				<input type="checkbox" bind:checked={logScale} class="accent-[var(--primary)]" />
 				log scale
 			</label>
 		</div>
 
 		{#if selected.length === 0}
-			<div class="dot-matrix border border-outline/20 bg-surface-container py-20 text-center">
+			<div class="border border-outline/20 bg-surface-container py-20 text-center">
 				<p class="font-mono text-sm text-on-surface-variant">Add a category to start comparing.</p>
 			</div>
 		{:else}
