@@ -389,27 +389,36 @@ def build_author_rankings(df: pl.DataFrame) -> list[dict]:
     return result
 
 
+YEAR_RANGES = [
+    (1991, 1999),
+    (2000, 2009),
+    (2010, 2014),
+    (2015, 2019),
+    (2020, 2026),
+]
+
+# Must match requestChunkSize in src/lib/utils/db.ts (httpvfs reads pages over HTTP)
+SQLITE_PAGE_SIZE = 4096
+
+
+def year_from_id(pid: str) -> int:
+    try:
+        if "/" in pid:  # old-style: archive/YYMMnnn (pre-2007)
+            digits = pid.split("/")[1][:2]
+        else:  # new-style: YYMM.nnnnn
+            digits = pid.split(".")[0][:2]
+        yy = int(digits)
+        return yy + (2000 if yy < 50 else 1900)
+    except (ValueError, IndexError):
+        return 0
+
+
 def build_search_db(df: pl.DataFrame, out_dir: Path):
-    def year_from_id(pid: str) -> int:
-        try:
-            prefix = pid.split(".")[0]
-            return int(prefix[:2]) + (2000 if int(prefix[:2]) < 50 else 1900)
-        except (ValueError, IndexError):
-            return 0
-
-    ranges = [
-        (1991, 1999),
-        (2000, 2009),
-        (2010, 2014),
-        (2015, 2019),
-        (2020, 2026),
-    ]
-
     df = df.with_columns(
         pl.col("id").map_elements(year_from_id, return_dtype=pl.Int32).alias("_year")
     )
 
-    for start, end in ranges:
+    for start, end in YEAR_RANGES:
         label = f"{start}-{end}"
         part = df.filter((pl.col("_year") >= start) & (pl.col("_year") <= end))
         if part.height == 0:
@@ -421,6 +430,7 @@ def build_search_db(df: pl.DataFrame, out_dir: Path):
             continue
 
         conn = sqlite3.connect(str(db_path))
+        conn.execute(f"PRAGMA page_size = {SQLITE_PAGE_SIZE}")
         conn.execute("PRAGMA synchronous = OFF")
         conn.execute("PRAGMA journal_mode = MEMORY")
         conn.execute("PRAGMA cache_size = -8000000")
@@ -443,6 +453,53 @@ def build_search_db(df: pl.DataFrame, out_dir: Path):
         conn.execute("COMMIT")
 
         conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('optimize')")
+        conn.commit()
+        conn.execute("VACUUM")
+        conn.close()
+
+        size_mb = db_path.stat().st_size / 1024 / 1024
+        print(f"  {db_name}: {size_mb:.1f} MB ({part.height:,} papers)")
+
+
+def build_detail_db(df: pl.DataFrame, out_dir: Path):
+    df = df.with_columns(
+        pl.col("id").map_elements(year_from_id, return_dtype=pl.Int32).alias("_year")
+    )
+
+    for start, end in YEAR_RANGES:
+        label = f"{start}-{end}"
+        part = df.filter((pl.col("_year") >= start) & (pl.col("_year") <= end))
+        if part.height == 0:
+            continue
+
+        db_name = f"detail_{label}.db"
+        db_path = out_dir / db_name
+        if db_path.exists():
+            continue
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(f"PRAGMA page_size = {SQLITE_PAGE_SIZE}")
+        conn.execute("PRAGMA synchronous = OFF")
+        conn.execute("PRAGMA journal_mode = MEMORY")
+        conn.execute("""
+            CREATE TABLE papers(
+                id TEXT PRIMARY KEY,
+                abstract TEXT, categories TEXT,
+                doi TEXT, license TEXT, update_date TEXT
+            ) WITHOUT ROWID
+        """)
+
+        conn.execute("BEGIN")
+        for batch in part.select(
+            "id", "abstract", "categories", "doi", "license", "update_date",
+        ).iter_slices(n_rows=50000):
+            conn.executemany(
+                "INSERT OR REPLACE INTO papers VALUES (?, ?, ?, ?, ?, ?)",
+                batch.rows(),
+            )
+        conn.execute("COMMIT")
+        conn.commit()
+        conn.execute("VACUUM")
         conn.close()
 
         size_mb = db_path.stat().st_size / 1024 / 1024
@@ -497,6 +554,9 @@ if __name__ == "__main__":
 
     print("Building FTS5 search databases\u2026")
     build_search_db(df, DATA_DIR)
+
+    print("Building paper detail databases\u2026")
+    build_detail_db(df, DATA_DIR)
 
     print("Building time series\u2026")
     ts_dir = DATA_DIR / "timeseries"

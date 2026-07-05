@@ -8,6 +8,9 @@ __pycache__/
 .ruff_cache/
 static/data/papers.parquet
 static/data/search*.db
+static/data/detail*.db
+.env
+.env.local
 .svelte-kit/
 build/
 node_modules/

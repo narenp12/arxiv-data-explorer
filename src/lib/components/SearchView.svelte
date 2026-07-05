@@ -30,15 +30,17 @@
 		const urlPage = parseInt($page.url.searchParams.get("page") || "1", 10);
 		if (urlQuery) query = urlQuery;
 
-		for (const range of ALL_RANGES) {
-			try {
+		const outcomes = await Promise.allSettled(
+			ALL_RANGES.map(async (range) => {
 				await loadDb(range);
 				loadProgress++;
-				await new Promise(r => setTimeout(r, 0));
-			} catch (e) {
-				error = e instanceof Error ? e.message : `Failed to load ${range}`;
-				break;
-			}
+			}),
+		);
+		if (outcomes.every(o => o.status === "rejected")) {
+			const first = outcomes[0] as PromiseRejectedResult;
+			error = first.reason instanceof Error
+				? first.reason.message
+				: "Failed to load search databases";
 		}
 
 		dbReady = true;
@@ -80,10 +82,10 @@
 		}, 300);
 	}
 
-	function doSearch(newOffset: number) {
+	async function doSearch(newOffset: number) {
 		try {
 			const ranges = activeRanges().filter(r => loadedRanges().includes(r));
-			const res = searchPapers(query, ranges, 30, newOffset);
+			const res = await searchPapers(query, ranges, 30, newOffset);
 			results = res.results;
 			total = res.total;
 			offset = newOffset;
