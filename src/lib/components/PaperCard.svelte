@@ -20,8 +20,8 @@
 		});
 	}
 
-	function gotoAuthor(e: MouseEvent, authorId: string) {
-		e.preventDefault();
+	function gotoAuthor(e: MouseEvent, authorId: string | undefined) {
+		if (!authorId) return;
 		e.stopPropagation();
 		goto(`${base}/authors/${authorId}`);
 	}

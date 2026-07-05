@@ -9,7 +9,7 @@ export interface PaperResult {
 	id: string;
 	title: string;
 	authors: string;
-	authorsWithIds: { name: string; authorId: string }[];
+	authorsWithIds: { name: string; authorId?: string }[];
 	year: number | null;
 	citationCount: number;
 	isArxiv: boolean;
@@ -78,15 +78,85 @@ async function rateLimitedFetch(url: string): Promise<Response> {
 	return res;
 }
 
-function arxivId(d: Record<string, unknown>): string {
+export function arxivId(d: Record<string, unknown>): string {
 	const ext = (d as { externalIds?: Record<string, string> }).externalIds;
 	if (ext?.ArXiv) return ext.ArXiv.replace(/v\d+$/, "");
 	return "";
 }
 
-function authorList(d: Record<string, unknown>): string {
+export function authorList(d: Record<string, unknown>): string {
 	const authors = (d as { authors?: { name: string }[] }).authors ?? [];
 	return authors.map((a) => a.name).join(", ");
+}
+
+export function getProp<T>(obj: Record<string, unknown>, key: string, fallback: T): T {
+	const val = obj[key];
+	return (val as T) ?? fallback;
+}
+
+function buildSearchUrl(
+	query: string,
+	limit: number,
+	offset: number,
+	options?: { yearRange?: string; fieldOfStudy?: string; minCites?: string },
+): string {
+	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
+	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
+	if (options?.fieldOfStudy) url += `&fieldsOfStudy=${encodeURIComponent(options.fieldOfStudy)}`;
+	if (options?.minCites) url += `&minCitationCount=${encodeURIComponent(options.minCites)}`;
+	return url;
+}
+
+function parseSearchResponse(data: Record<string, unknown>): PaperResult[] {
+	const items = getProp<unknown[]>(data, "data", []) as Record<string, unknown>[];
+	return items.map((d) => {
+		const ext = getProp<Record<string, string> | null>(d, "externalIds", null);
+		const paperId = getProp(d, "paperId", "");
+		const authors = getProp<{ name: string; authorId?: string }[]>(d, "authors", []);
+		return {
+			id: arxivId(d) || paperId,
+			title: getProp(d, "title", ""),
+			authors: authors.map((a) => a.name).join(", "),
+			authorsWithIds: authors,
+			year: getProp<number | null>(d, "year", null),
+			citationCount: getProp(d, "citationCount", 0),
+			isArxiv: Boolean(ext?.ArXiv),
+			s2Url: `https://www.semanticscholar.org/paper/${paperId}`,
+		};
+	});
+}
+
+function parseArxivResponse(doc: Document): PaperResult[] {
+	return Array.from(doc.getElementsByTagName("entry")).map((entry) => {
+		const idText = entry.getElementsByTagName("id")[0]?.textContent ?? "";
+		const id = idText.replace(/^https?:\/\/arxiv\.org\/abs\//, "").replace(/v\d+$/, "");
+		const titleText = entry.getElementsByTagName("title")[0]?.textContent ?? "";
+		const title = titleText.replace(/\s+/g, " ").trim();
+		const authorNames = Array.from(entry.getElementsByTagName("author"))
+			.map((a) => a.getElementsByTagName("name")[0]?.textContent ?? "")
+			.filter(Boolean);
+		const published = entry.getElementsByTagName("published")[0]?.textContent ?? "";
+		const year = published ? parseInt(published.slice(0, 4), 10) : null;
+
+		return {
+			id,
+			title,
+			authors: authorNames.join(", "),
+			authorsWithIds: authorNames.map((name) => ({ name })),
+			year: year && !Number.isNaN(year) ? year : null,
+			citationCount: 0,
+			isArxiv: true,
+			s2Url: "",
+		};
+	});
+}
+
+function parseArxivTotal(doc: Document): number {
+	const totalResultsEl = Array.from(doc.getElementsByTagName("*")).find(
+		(el) => el.localName === "totalResults",
+	);
+	if (totalResultsEl?.textContent) return parseInt(totalResultsEl.textContent, 10) || 0;
+	return 0;
 }
 
 export async function searchPapers(
@@ -98,40 +168,21 @@ export async function searchPapers(
 
 	const limit = options?.limit ?? 30;
 	const offset = options?.offset ?? 0;
+	const yearRange = options?.yearRange;
 
-	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: options?.yearRange ?? null, fieldOfStudy: options?.fieldOfStudy ?? null, minCites: options?.minCites ?? null });
+	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: yearRange ?? null, fieldOfStudy: options?.fieldOfStudy ?? null, minCites: options?.minCites ?? null });
 	const cached = searchCache.get(cacheKey);
 	if (cached) return cached;
 
-	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
-	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
-	if (options?.fieldOfStudy) url += `&fieldsOfStudy=${encodeURIComponent(options.fieldOfStudy)}`;
-	if (options?.minCites) url += `&minCitationCount=${encodeURIComponent(options.minCites)}`;
-
+	const url = buildSearchUrl(q, limit, offset, { yearRange, fieldOfStudy: options?.fieldOfStudy, minCites: options?.minCites });
 	const res = await rateLimitedFetch(url);
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
 
 	const data = await res.json();
-	const results: PaperResult[] = (data.data ?? []).map((d: Record<string, unknown>) => {
-		const ext = (d as { externalIds?: Record<string, string> }).externalIds;
-		const paperId = (d as { paperId?: string }).paperId ?? "";
-		const authors = (d as { authors?: { name: string; authorId?: string }[] }).authors ?? [];
-		return {
-			id: arxivId(d) || paperId,
-			title: (d as { title?: string }).title ?? "",
-			authors: authorList(d),
-			authorsWithIds: authors.map((a) => ({
-				name: a.name,
-				authorId: a.authorId ?? "",
-			})),
-			year: (d as { year?: number | null }).year ?? null,
-			citationCount: (d as { citationCount?: number }).citationCount ?? 0,
-			isArxiv: Boolean(ext?.ArXiv),
-			s2Url: `https://www.semanticscholar.org/paper/${paperId}`,
-		};
-	});
+	const results = parseSearchResponse(data);
+	const total = getProp<number>(data, "total", 0);
 
-	const result = { results, total: (data as { total?: number }).total ?? 0 };
+	const result = { results, total };
 	setCached(searchCache, cacheKey, result);
 	return result;
 }
@@ -155,36 +206,8 @@ export async function searchArxivCategory(
 	const text = await res.text();
 	const doc = new DOMParser().parseFromString(text, "application/xml");
 
-	const entries = Array.from(doc.getElementsByTagName("entry"));
-	const results: PaperResult[] = entries.map((entry) => {
-		const idText = entry.getElementsByTagName("id")[0]?.textContent ?? "";
-		const id = idText.replace(/^https?:\/\/arxiv\.org\/abs\//, "").replace(/v\d+$/, "");
-		const titleText = entry.getElementsByTagName("title")[0]?.textContent ?? "";
-		const title = titleText.replace(/\s+/g, " ").trim();
-		const authors = Array.from(entry.getElementsByTagName("author"))
-			.map((a) => a.getElementsByTagName("name")[0]?.textContent ?? "")
-			.filter(Boolean)
-			.join(", ");
-		const published = entry.getElementsByTagName("published")[0]?.textContent ?? "";
-		const year = published ? parseInt(published.slice(0, 4), 10) : null;
-
-		return {
-			id,
-			title,
-			authors,
-			authorsWithIds: [],
-			year: year && !Number.isNaN(year) ? year : null,
-			citationCount: 0,
-			isArxiv: true,
-			s2Url: "",
-		};
-	});
-
-	let total = 0;
-	const totalResultsEl = Array.from(doc.getElementsByTagName("*")).find(
-		(el) => el.localName === "totalResults",
-	);
-	if (totalResultsEl?.textContent) total = parseInt(totalResultsEl.textContent, 10) || 0;
+	const results = parseArxivResponse(doc);
+	const total = parseArxivTotal(doc);
 
 	const result = { results, total };
 	setCached(searchCache, cacheKey, result);
@@ -205,22 +228,22 @@ export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 	}
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
 
-	const d = await res.json();
-	const ext = (d as { externalIds?: Record<string, string> }).externalIds ?? {};
-	const pdf = (d as { openAccessPdf?: { license?: string } }).openAccessPdf;
+	const data = await res.json();
+	const ext = getProp<Record<string, string>>(data, "externalIds", {});
+	const pdf = getProp<{ license?: string } | null>(data, "openAccessPdf", null);
 
 	const detail: PaperDetail = {
 		id: cleanId,
-		title: (d as { title?: string }).title ?? "",
-		authors: authorList(d),
-		abstract: (d as { abstract?: string }).abstract ?? "",
-		venue: (d as { venue?: string }).venue ?? "",
+		title: getProp(data, "title", ""),
+		authors: authorList(data),
+		abstract: getProp(data, "abstract", ""),
+		venue: getProp(data, "venue", ""),
 		doi: (ext.DOI ?? "").replace("https://doi.org/", "") || null,
 		license: pdf?.license ?? null,
-		update_date: (d as { publicationDate?: string }).publicationDate ?? null,
+		update_date: getProp<string | null>(data, "publicationDate", null),
 		arxivUrl: `https://arxiv.org/abs/${cleanId}`,
-		s2Url: `https://www.semanticscholar.org/paper/${(d as { paperId?: string }).paperId ?? ""}`,
-		citationCount: (d as { citationCount?: number }).citationCount ?? 0,
+		s2Url: `https://www.semanticscholar.org/paper/${getProp(data, "paperId", "")}`,
+		citationCount: getProp(data, "citationCount", 0),
 	};
 
 	setCached(detailCache, cleanId, detail);
