@@ -1,6 +1,7 @@
 import argparse
 import json
 import sqlite3
+from itertools import combinations
 from pathlib import Path
 
 import polars as pl
@@ -325,21 +326,40 @@ def build_author_graph(df: pl.DataFrame) -> dict:
     top_authors = author_counts.head(50000)
     author_set = set(top_authors["full_name"].to_list())
 
-    exploded = df.select(
-        pl.int_range(0, pl.len()).alias("_row_idx"),
+    exploded = df.with_columns(
+        pl.int_range(0, pl.len()).alias("_row_idx")
+    ).select(
+        "_row_idx",
         pl.col("authors_parsed").list.eval(name_expr).alias("author"),
-    ).explode("author").filter(pl.col("author").is_in(author_set))
+    ).explode("author").filter(
+        pl.col("author").is_in(author_set)
+    )
 
-    pairs = exploded.join(
-        exploded, on="_row_idx", suffix="_b"
-    ).filter(pl.col("author") < pl.col("author_b")).group_by(
-        ["author", "author_b"]
-    ).agg(pl.len().alias("count")).sort("count", descending=True)
+    authors_list = exploded.select("_row_idx", pl.col("author")).to_dicts()
+    paper_pairs: dict[tuple[str, str], int] = {}
+    n = len(authors_list)
+    i = 0
+    while i < n:
+        row_idx = authors_list[i]["_row_idx"]
+        names: list[str] = []
+        while i < n and authors_list[i]["_row_idx"] == row_idx:
+            names.append(authors_list[i]["author"])
+            i += 1
+        if len(names) >= 2:
+            for a, b in combinations(names, 2):
+                key = (a, b) if a < b else (b, a)
+                paper_pairs[key] = paper_pairs.get(key, 0) + 1
+
+    pair_df = pl.DataFrame(
+        {"source": [k[0] for k in paper_pairs], "target": [k[1] for k in paper_pairs],
+         "count": list(paper_pairs.values())},
+        schema={"source": pl.Utf8, "target": pl.Utf8, "count": pl.UInt32},
+    ).sort("count", descending=True)
 
     node_weight = {r["full_name"]: r["weight"] for r in top_authors.iter_rows(named=True)}
     nodes = [{"id": name, "label": name, "weight": w} for name, w in node_weight.items()]
-    edges = [{"source": r["author"], "target": r["author_b"], "weight": r["count"]}
-             for r in pairs.head(200000).iter_rows(named=True)]
+    edges = [{"source": r["source"], "target": r["target"], "weight": r["count"]}
+             for r in pair_df.head(200000).iter_rows(named=True)]
 
     return {"nodes": nodes, "edges": edges, "metadata": {"total_nodes": len(nodes), "total_edges": len(edges)}}
 
@@ -379,47 +399,24 @@ def build_search_db(df: pl.DataFrame, db_path: Path):
     conn.execute("PRAGMA cache_size = -8000000")
 
     conn.execute("""
-        CREATE TABLE papers(
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            abstract TEXT,
-            authors TEXT,
-            categories TEXT,
-            date TEXT,
-            domain TEXT
-        )
-    """)
-    conn.execute("""
         CREATE VIRTUAL TABLE papers_fts USING fts5(
             id UNINDEXED, title, authors,
-            tokenize='porter unicode61'
+            tokenize='porter unicode61',
+            content=''
         )
     """)
 
-    base = df.select(
-        "id", "title", "abstract",
+    conn.execute("BEGIN")
+    for batch in df.select(
+        "id", "title",
         pl.col("authors").fill_null(""),
-        "categories", "update_date",
-        pl.col("categories").str.split(".").list.first().alias("domain"),
-    )
+    ).iter_slices(n_rows=50000):
+        fts_rows = [(r["id"], r["title"], r["authors"])
+                     for r in batch.iter_rows(named=True)]
+        conn.executemany("INSERT INTO papers_fts VALUES (?, ?, ?)", fts_rows)
+    conn.execute("COMMIT")
 
-    rows = []
-    fts_rows = []
-    for r in base.iter_rows(named=True):
-        rows.append((
-            r["id"], r["title"], r.get("abstract", "") or "",
-            r["authors"], r["categories"], r["update_date"], r["domain"],
-        ))
-        fts_rows.append((r["id"], r["title"], r["authors"]))
-
-    conn.executemany(
-        "INSERT INTO papers VALUES (?, ?, ?, ?, ?, ?, ?)", rows
-    )
-    conn.executemany(
-        "INSERT INTO papers_fts VALUES (?, ?, ?)", fts_rows
-    )
     conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('optimize')")
-    conn.commit()
     conn.close()
 
 
