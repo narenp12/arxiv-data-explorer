@@ -8,3 +8,6 @@ __pycache__/
 .ruff_cache/
 static/data/papers.parquet
 static/data/search.db
+.svelte-kit/
+build/
+node_modules/
