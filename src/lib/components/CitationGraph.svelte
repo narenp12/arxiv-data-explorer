@@ -3,7 +3,6 @@
 	import * as d3 from "d3";
 	import { base } from "$app/paths";
 	import { fetchReferences, fetchCitations } from "$lib/utils/openalex";
-	import type { WorkSummary } from "$lib/types";
 
 	let { openalexWorkId, currentTitle, arxivId }: {
 		openalexWorkId: string | null;
@@ -15,6 +14,8 @@
 	let containerEl = $state<HTMLDivElement>();
 	let loading = $state(true);
 	let timedOut = $state(false);
+	let hasData = $state(false);
+	let collapsed = $state(true);
 
 	interface GraphNode extends d3.SimulationNodeDatum {
 		id: string;
@@ -52,6 +53,8 @@
 				loading = false;
 				return;
 			}
+
+			hasData = true;
 
 			const nodeMap = new Map<string, GraphNode>();
 			const links: GraphLink[] = [];
@@ -92,6 +95,20 @@
 			const svg = d3.select(svgEl)
 				.attr("viewBox", [0, 0, width, height]);
 
+			const markerId = `arrowhead-${Math.random().toString(36).slice(2, 8)}`;
+
+			svg.append("defs").append("marker")
+				.attr("id", markerId)
+				.attr("viewBox", "0 -5 10 10")
+				.attr("refX", 10)
+				.attr("refY", 0)
+				.attr("markerWidth", 6)
+				.attr("markerHeight", 6)
+				.attr("orient", "auto")
+				.append("path")
+				.attr("d", "M0,-5L10,0L0,5")
+				.attr("fill", "var(--color-primary, #00dbe7)");
+
 			const simulation = d3.forceSimulation<GraphNode>(nodes)
 				.force("link", d3.forceLink<GraphNode, GraphLink>(links).id((d) => d.id).distance(100))
 				.force("charge", d3.forceManyBody().strength(-200))
@@ -103,7 +120,8 @@
 				.join("line")
 				.attr("stroke", "var(--color-outline-dim, #3a494b)")
 				.attr("stroke-width", 1)
-				.attr("stroke-opacity", 0.5);
+				.attr("stroke-opacity", 0.5)
+				.attr("marker-end", `url(#${markerId})`);
 
 			const node = svg.append("g")
 				.selectAll("g")
@@ -151,14 +169,26 @@
 </script>
 
 <div bind:this={containerEl} class="mt-4">
-	{#if loading}
-		<div class="flex items-center gap-2 text-secondary py-4">
-			<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-			<span class="text-sm">Loading citation graph…</span>
-		</div>
-	{:else if timedOut}
-		<p class="text-xs text-secondary py-4">Citation graph timed out. Data is available in the tabular views above.</p>
-	{:else}
-		<svg bind:this={svgEl} class="w-full rounded border border-outline-dim bg-surface-container"></svg>
+	<button
+		onclick={() => collapsed = !collapsed}
+		class="flex w-full items-center gap-2 rounded border border-outline-dim bg-surface-container px-4 py-2 text-left text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-hover"
+	>
+		<span class="text-xs transition-transform {collapsed ? '' : 'rotate-90'}">▸</span>
+		Citation Graph
+	</button>
+
+	{#if !collapsed}
+		{#if loading}
+			<div class="flex items-center gap-2 text-secondary py-4">
+				<span class="inline-block w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+				<span class="text-sm">Loading citation graph…</span>
+			</div>
+		{:else if timedOut}
+			<p class="text-xs text-secondary py-4">Citation graph timed out. Data is available in the tabular views above.</p>
+		{:else if !hasData}
+			<p class="text-sm text-secondary py-4">No citation data available.</p>
+		{:else}
+			<svg bind:this={svgEl} class="h-[350px] w-full rounded border border-outline-dim bg-surface-container"></svg>
+		{/if}
 	{/if}
 </div>
