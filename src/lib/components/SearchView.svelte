@@ -4,6 +4,7 @@
 	import { replaceState } from "$app/navigation";
 	import { searchPapers, searchArxivCategory, type PaperResult } from "$lib/utils/db";
 	import PaperCard from "./PaperCard.svelte";
+	import SearchFilters from "./SearchFilters.svelte";
 
 	let query = $state("");
 	let results: PaperResult[] = $state([]);
@@ -11,17 +12,20 @@
 	let offset = $state(0);
 	let searching = $state(false);
 	let error: string | null = $state(null);
-	let yearFrom = $state("");
-	let yearTo = $state("");
 	let viaArxiv = $state(false);
+
+	let yearRange = $state("");
+	let fieldOfStudy = $state("");
+	let minCites = $state("");
 
 	const LIMIT = 30;
 
 	onMount(() => {
 		const urlQuery = $page.url.searchParams.get("q");
 		const urlPage = Math.max(1, parseInt($page.url.searchParams.get("page") || "1", 10));
-		yearFrom = $page.url.searchParams.get("from") || "";
-		yearTo = $page.url.searchParams.get("to") || "";
+		yearRange = $page.url.searchParams.get("yr") || "";
+		fieldOfStudy = $page.url.searchParams.get("fo") || "";
+		minCites = $page.url.searchParams.get("mc") || "";
 		if (urlQuery) {
 			query = urlQuery;
 			if (urlQuery.trim().length >= 2) {
@@ -36,11 +40,26 @@
 		const params = new URLSearchParams();
 		if (q) params.set("q", q);
 		if (pageNum > 1) params.set("page", String(pageNum));
-		if (yearFrom) params.set("from", yearFrom);
-		if (yearTo) params.set("to", yearTo);
+		if (yearRange) params.set("yr", yearRange);
+		if (fieldOfStudy) params.set("fo", fieldOfStudy);
+		if (minCites) params.set("mc", minCites);
 		const str = params.toString();
 		const url = str ? `?${str}` : window.location.pathname;
 		replaceState(url, {});
+	}
+
+	function onFilterChange(filters: { yearRange: string; fieldOfStudy: string; minCites: string }) {
+		yearRange = filters.yearRange;
+		fieldOfStudy = filters.fieldOfStudy;
+		minCites = filters.minCites;
+		offset = 0;
+		if (query.trim().length >= 2) {
+			clearTimeout(debounceTimer);
+			searching = true;
+			debounceTimer = setTimeout(() => doSearch(), 300);
+		} else {
+			syncUrl(query, 0);
+		}
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout>;
@@ -73,12 +92,12 @@
 				if (seq !== requestSeq) return;
 				viaArxiv = true;
 			} else {
-				const currentYear = new Date().getFullYear();
-				const yr = yearFrom && yearTo ? `${yearFrom}-${yearTo}` : yearFrom || yearTo ? `${yearFrom || "1991"}-${yearTo || String(currentYear)}` : undefined;
 				res = await searchPapers(query, {
 					limit: LIMIT,
 					offset,
-					yearRange: yr,
+					yearRange: yearRange || undefined,
+					fieldOfStudy: fieldOfStudy || undefined,
+					minCites: minCites || undefined,
 				});
 				if (seq !== requestSeq) return;
 				viaArxiv = false;
@@ -119,23 +138,7 @@
 		{/if}
 	</div>
 
-	<div class="flex items-center gap-2 font-mono text-xs text-on-surface-variant">
-		<label class="label-caps" for="year-from">Year</label>
-		<input
-			id="year-from"
-			type="number" placeholder="From" min="1991" max={new Date().getFullYear()}
-			bind:value={yearFrom}
-			oninput={() => { offset = 0; clearTimeout(debounceTimer); if (query.trim().length >= 2) { searching = true; debounceTimer = setTimeout(() => doSearch(), 300); } }}
-			class="w-20 border border-outline/20 bg-surface-container px-2 py-1.5 text-on-surface transition-colors focus:border-primary focus:outline-none placeholder:text-outline"
-		/>
-		<span class="text-outline">–</span>
-		<input
-			type="number" placeholder="To" min="1991" max={new Date().getFullYear()}
-			bind:value={yearTo}
-			oninput={() => { offset = 0; clearTimeout(debounceTimer); if (query.trim().length >= 2) { searching = true; debounceTimer = setTimeout(() => doSearch(), 300); } }}
-			class="w-20 border border-outline/20 bg-surface-container px-2 py-1.5 text-on-surface transition-colors focus:border-primary focus:outline-none placeholder:text-outline"
-		/>
-	</div>
+	<SearchFilters {yearRange} {fieldOfStudy} {minCites} onChange={onFilterChange} />
 
 	{#if error}
 		<div class="py-16 text-center font-mono text-sm text-warning-red">

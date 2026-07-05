@@ -90,7 +90,7 @@ function authorList(d: Record<string, unknown>): string {
 
 export async function searchPapers(
 	query: string,
-	options?: { yearRange?: string; limit?: number; offset?: number },
+	options?: { yearRange?: string; fieldOfStudy?: string; minCites?: string; limit?: number; offset?: number },
 ): Promise<{ results: PaperResult[]; total: number }> {
 	const q = query.trim();
 	if (!q || q.length < 2) return { results: [], total: 0 };
@@ -98,12 +98,14 @@ export async function searchPapers(
 	const limit = options?.limit ?? 30;
 	const offset = options?.offset ?? 0;
 
-	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: options?.yearRange ?? null });
+	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: options?.yearRange ?? null, fieldOfStudy: options?.fieldOfStudy ?? null, minCites: options?.minCites ?? null });
 	const cached = searchCache.get(cacheKey);
 	if (cached) return cached;
 
 	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
 	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
+	if (options?.fieldOfStudy) url += `&fieldsOfStudy=${encodeURIComponent(options.fieldOfStudy)}`;
+	if (options?.minCites) url += `&minCitationCount=${encodeURIComponent(options.minCites)}`;
 
 	const res = await rateLimitedFetch(url);
 	if (!res.ok) throw new Error(`Semantic Scholar error: ${res.status}`);
