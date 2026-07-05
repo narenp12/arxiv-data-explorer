@@ -5,6 +5,8 @@
 	import { readingList } from "$lib/stores/saved.svelte";
 	import type { ConceptTag } from "$lib/types";
 	import ConceptPill from "$lib/components/ConceptPill.svelte";
+	import RelatedPapersTabs from "$lib/components/RelatedPapersTabs.svelte";
+	import CitationGraph from "$lib/components/CitationGraph.svelte";
 
 	function toggleSave(d: PaperDetail) {
 		readingList.toggle({
@@ -165,5 +167,9 @@
 				</div>
 			</div>
 		</article>
+
+		<RelatedPapersTabs openalexWorkId={detail.doi} arxivId={detail.id} />
+
+		<CitationGraph openalexWorkId={detail.doi} currentTitle={detail.title} arxivId={detail.id} />
 	{/if}
 </div>
