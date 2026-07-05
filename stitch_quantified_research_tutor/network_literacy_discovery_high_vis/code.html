@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>arXiv Explorer | Optical Laboratory Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+        .scanline-effect {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to right, transparent, #00dbe7, transparent);
+            opacity: 0.15;
+            animation: scanline 12s linear infinite;
+            pointer-events: none;
+            box-shadow: 0 0 15px #00dbe7;
+        }
+        .dot-matrix {
+            background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .glass-panel {
+            background: rgba(14, 14, 14, 0.85);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        .neon-border-blue {
+            box-shadow: 0 0 10px rgba(0, 219, 237, 0.3), inset 0 0 5px rgba(0, 219, 237, 0.1);
+            border-color: rgba(0, 219, 237, 0.5);
+        }
+        .neon-border-purple {
+            box-shadow: 0 0 10px rgba(85, 22, 190, 0.3), inset 0 0 5px rgba(85, 22, 190, 0.1);
+            border-color: rgba(85, 22, 190, 0.5);
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #353534; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #00dbe7; }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-tint": "#00dbe7",
+                        "surface-container": "#181818",
+                        "on-tertiary-container": "#5e6060",
+                        "primary-fixed": "#74f5ff",
+                        "on-secondary-fixed": "#23005c",
+                        "on-primary-container": "#006a71",
+                        "inverse-surface": "#e5e2e1",
+                        "secondary": "#d0bcff",
+                        "primary": "#e1fdff",
+                        "on-secondary-fixed-variant": "#5516be",
+                        "on-primary-fixed": "#002022",
+                        "tertiary-fixed-dim": "#c6c6c7",
+                        "tertiary": "#f7f8f8",
+                        "surface-container-high": "#2a2a2a",
+                        "on-tertiary-fixed-variant": "#454747",
+                        "surface": "#0e0e0e",
+                        "tertiary-fixed": "#e2e2e2",
+                        "secondary-container": "#571bc1",
+                        "on-background": "#e5e2e1",
+                        "surface-container-low": "#1c1b1b",
+                        "on-secondary": "#3c0091",
+                        "background": "#0a0a0a",
+                        "on-secondary-container": "#c4abff",
+                        "tertiary-container": "#dbdbdb",
+                        "inverse-primary": "#00696f",
+                        "secondary-fixed-dim": "#d0bcff",
+                        "on-surface": "#ffffff",
+                        "surface-bright": "#3a3939",
+                        "on-error": "#690005",
+                        "primary-fixed-dim": "#00dbe7",
+                        "inverse-on-surface": "#313030",
+                        "on-tertiary": "#2f3131",
+                        "on-surface-variant": "#b9cacb",
+                        "on-error-container": "#ffdad6",
+                        "surface-dim": "#0e0e0e",
+                        "primary-container": "#00f2ff",
+                        "on-primary": "#00363a",
+                        "error-container": "#93000a",
+                        "error": "#ffb4ab",
+                        "on-tertiary-fixed": "#1a1c1c",
+                        "surface-container-lowest": "#050505",
+                        "surface-variant": "#353534",
+                        "secondary-fixed": "#e9ddff",
+                        "outline": "#849495",
+                        "on-primary-fixed-variant": "#004f54",
+                        "surface-container-highest": "#353534",
+                        "outline-variant": "#3a494b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "2px",
+                        "lg": "4px",
+                        "xl": "8px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "row-gap": "24px",
+                        "margin-page": "48px",
+                        "gutter": "1px",
+                        "container-max": "1440px",
+                        "col-gap": "24px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Playfair Display"],
+                        "code-data": ["Space Mono"],
+                        "headline-lg-mobile": ["Playfair Display"],
+                        "body-lg": ["Space Mono"],
+                        "headline-md": ["Playfair Display"],
+                        "body-sm": ["Space Mono"],
+                        "headline-lg": ["Playfair Display"],
+                        "label-caps": ["Space Mono"]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface selection:bg-primary-fixed-dim selection:text-on-primary-fixed overflow-hidden h-screen w-screen font-body-sm">
+<!-- Top Navigation -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-page h-16 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
+<div class="flex items-center gap-12">
+<div class="flex flex-col">
+<h1 class="font-headline-md text-[20px] font-bold tracking-tight text-primary-fixed-dim uppercase leading-none">Network Literacy</h1>
+<span class="font-label-caps text-[9px] text-outline-variant tracking-[0.3em] mt-1">RESEARCH INSTRUMENT v4.0.1</span>
+</div>
+<nav class="hidden md:flex gap-8">
+<a class="font-label-caps text-label-caps text-primary-fixed-dim border-b-2 border-primary-fixed-dim px-1 py-1 transition-all" href="#">SCAN</a>
+<a class="font-label-caps text-label-caps text-on-surface/60 hover:text-primary transition-all px-1 py-1" href="#">EPOCH</a>
+<a class="font-label-caps text-label-caps text-on-surface/60 hover:text-primary transition-all px-1 py-1" href="#">COORDINATES</a>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1 border border-outline-variant/20">
+<span class="w-2 h-2 rounded-full bg-primary-fixed-dim animate-pulse shadow-[0_0_8px_#00dbe7]"></span>
+<span class="font-code-data text-[10px] text-primary-fixed-dim">SIGNAL: NOMINAL</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="material-symbols-outlined text-on-surface/60 hover:text-primary transition-colors p-2 text-[20px]">terminal</button>
+<button class="material-symbols-outlined text-on-surface/60 hover:text-primary transition-colors p-2 text-[20px]">settings</button>
+</div>
+</div>
+</header>
+<!-- Sidebar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px-32px)] w-20 flex flex-col items-center py-8 z-40 bg-surface/60 backdrop-blur-3xl border-r border-outline-variant/20">
+<div class="flex flex-col gap-10 h-full">
+<div class="flex flex-col items-center gap-2 group cursor-pointer">
+<div class="w-12 h-12 flex items-center justify-center text-primary-fixed-dim bg-primary-fixed-dim/10 border border-primary-fixed-dim/30 hover:border-primary-fixed-dim transition-all duration-300 shadow-[0_0_15px_rgba(0,219,231,0.1)]">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">blur_on</span>
+</div>
+<span class="font-label-caps text-[10px] text-primary-fixed-dim font-bold">PHYSICS</span>
+</div>
+<div class="flex flex-col items-center gap-2 group cursor-pointer opacity-50 hover:opacity-100 transition-all">
+<div class="w-12 h-12 flex items-center justify-center text-on-surface/70 group-hover:bg-white/5 border border-transparent transition-all">
+<span class="material-symbols-outlined">memory</span>
+</div>
+<span class="font-label-caps text-[10px] font-bold">CS</span>
+</div>
+<div class="flex flex-col items-center gap-2 group cursor-pointer opacity-50 hover:opacity-100 transition-all">
+<div class="w-12 h-12 flex items-center justify-center text-on-surface/70 group-hover:bg-white/5 border border-transparent transition-all">
+<span class="material-symbols-outlined">functions</span>
+</div>
+<span class="font-label-caps text-[10px] font-bold">MATH</span>
+</div>
+<div class="flex flex-col items-center gap-2 group cursor-pointer opacity-50 hover:opacity-100 transition-all">
+<div class="w-12 h-12 flex items-center justify-center text-on-surface/70 group-hover:bg-white/5 border border-outline-variant/20 transition-all">
+<span class="material-symbols-outlined">school</span>
+</div>
+<span class="font-label-caps text-[10px] font-bold">TOUR</span>
+</div>
+<div class="mt-auto pt-6 border-t border-outline-variant/20 flex flex-col items-center gap-4">
+<span class="material-symbols-outlined text-secondary-fixed-dim animate-pulse">sensors</span>
+<div class="[writing-mode:vertical-lr] font-code-data text-[10px] text-outline font-bold tracking-widest uppercase py-4">UNIT_01</div>
+</div>
+</div>
+</aside>
+<!-- Main Workspace -->
+<main class="ml-20 mt-16 h-[calc(100vh-64px-32px)] relative overflow-hidden bg-background">
+<!-- Enhanced Blueprint Grid -->
+<div class="absolute inset-0 dot-matrix pointer-events-none opacity-20"></div>
+<div class="absolute inset-0 bg-gradient-to-tr from-primary-fixed-dim/5 via-transparent to-secondary-fixed-dim/5 pointer-events-none"></div>
+<div class="absolute top-6 left-8 font-code-data text-[10px] text-outline-variant/60 tracking-wider">L_COORD: 37.4221 // R_COORD: -122.0841</div>
+<div class="absolute bottom-6 left-8 font-code-data text-[10px] text-outline-variant/60 tracking-wider uppercase flex gap-6">
+<span>REF_GRID: ACTIVE</span>
+<span>RESOLUTION: 1024_P_X</span>
+</div>
+<!-- Crosshairs -->
+<div class="absolute inset-0 border-[1px] border-outline-variant/10 pointer-events-none">
+<div class="absolute left-1/2 top-0 bottom-0 w-[1px] bg-outline-variant/15"></div>
+<div class="absolute top-1/2 left-0 right-0 h-[1px] bg-outline-variant/15"></div>
+</div>
+<!-- Centerpiece Graph -->
+<div class="w-full h-full cursor-move" id="network-graph"></div>
+<!-- Floating UI Panels -->
+<!-- Top Left: Data Visualizer Meta -->
+<div class="absolute top-8 left-8 glass-panel p-5 w-72 neon-border-blue">
+<h3 class="font-label-caps text-[12px] font-bold text-primary-fixed-dim mb-4 flex items-center gap-3">
+<span class="w-3 h-3 bg-primary-fixed-dim rounded-full shadow-[0_0_12px_#00dbe7] border border-white/20"></span>
+            SCAN: CO-OCCURRENCE
+        </h3>
+<div class="font-code-data space-y-2 text-[11px] font-bold">
+<div class="flex justify-between border-b border-outline-variant/10 pb-1">
+<span class="text-outline uppercase">Mapped Nodes</span>
+<span class="text-on-surface">1,204</span>
+</div>
+<div class="flex justify-between border-b border-outline-variant/10 pb-1">
+<span class="text-outline uppercase">Relational Density</span>
+<span class="text-on-surface">4,892</span>
+</div>
+<div class="flex justify-between border-b border-outline-variant/10 pb-1">
+<span class="text-outline uppercase">Processing Lag</span>
+<span class="text-primary-fixed-dim">14ms</span>
+</div>
+</div>
+<div class="mt-6 pt-5 border-t border-outline-variant/30">
+<div class="mb-3 flex items-center justify-between">
+<span class="font-label-caps text-[10px] text-on-surface font-bold tracking-wider">HYPOTHESIS SANDBOX</span>
+<span class="material-symbols-outlined text-[20px] text-primary-fixed-dim animate-pulse">radio_button_checked</span>
+</div>
+<div class="p-3 bg-white/5 border border-primary-fixed-dim/20 text-[10px] font-code-data leading-relaxed text-on-surface-variant uppercase">
+                Ready for relational prediction input. Select primary node to begin simulation.
+            </div>
+<button class="w-full mt-4 bg-primary-fixed-dim/20 hover:bg-primary-fixed-dim/30 border border-primary-fixed-dim/40 text-primary-fixed-dim font-label-caps text-[10px] py-2 transition-all">
+                INITIATE PREDICTION
+            </button>
+</div>
+</div>
+<!-- Side Panel: Spectrum Analysis -->
+<aside class="absolute top-8 right-8 h-[calc(100%-64px)] w-80 glass-panel neon-border-purple flex flex-col">
+<div class="p-5 border-b border-outline-variant/30">
+<div class="flex justify-between items-center mb-1">
+<h3 class="font-label-caps text-[14px] font-bold text-secondary-fixed-dim tracking-wider uppercase">Spectrum Analysis</h3>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[18px]">monitoring</span>
+</div>
+<p class="font-body-sm text-[10px] text-outline font-bold uppercase tracking-tight">Signal Peak Hierarchy</p>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-8">
+<!-- Peak 1 -->
+<div class="group cursor-default">
+<div class="flex justify-between items-end mb-2">
+<span class="font-code-data text-[12px] font-bold text-on-surface">DR. K. VASQUEZ</span>
+<span class="font-code-data text-[11px] text-secondary-fixed-dim font-bold">98.4% <span class="opacity-50">[P&lt;0.001]</span></span>
+</div>
+<div class="h-20 flex items-end gap-1 px-1 border-b border-outline-variant/30 pb-1">
+<div class="flex-1 bg-secondary-fixed-dim/20 h-[30%] group-hover:bg-secondary-fixed-dim/40 transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim/40 h-[60%] group-hover:bg-secondary-fixed-dim/60 transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim h-[95%] shadow-[0_0_20px_#d0bcff]"></div>
+<div class="flex-1 bg-secondary-fixed-dim/40 h-[50%] transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim/20 h-[20%] transition-all"></div>
+</div>
+<div class="mt-2 font-code-data text-[10px] text-outline-variant font-bold uppercase flex justify-between">
+<span class="text-on-surface/80">DOMAIN: <span class="text-secondary-fixed-dim border-b border-secondary-fixed-dim/30">QUANTUM GRAV</span></span>
+<span>1.4 GHz</span>
+</div>
+</div>
+<!-- Peak 2 -->
+<div class="group cursor-default">
+<div class="flex justify-between items-end mb-2">
+<span class="font-code-data text-[12px] font-bold text-on-surface">DR. CHEN L.</span>
+<span class="font-code-data text-[11px] text-secondary-fixed-dim font-bold">82.1% <span class="opacity-50">[±2.4%]</span></span>
+</div>
+<div class="h-20 flex items-end gap-1 px-1 border-b border-outline-variant/30 pb-1">
+<div class="flex-1 bg-secondary-fixed-dim/20 h-[10%] transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim/40 h-[40%] transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim h-[80%] shadow-[0_0_15px_rgba(208,188,255,0.4)]"></div>
+<div class="flex-1 bg-secondary-fixed-dim/60 h-[60%] transition-all"></div>
+<div class="flex-1 bg-secondary-fixed-dim/30 h-[20%] transition-all"></div>
+</div>
+<div class="mt-2 font-code-data text-[10px] text-outline-variant font-bold uppercase flex justify-between">
+<span class="text-on-surface/80">DOMAIN: <span class="text-secondary-fixed-dim border-b border-secondary-fixed-dim/30">NEURAL TOPOLOGY</span></span>
+<span>0.8 GHz</span>
+</div>
+</div>
+<!-- Teaching Moment / Sensitivity Simulator -->
+<div class="p-4 bg-secondary-container/10 border border-secondary-fixed-dim/20 rounded-lg">
+<h4 class="font-label-caps text-[11px] font-bold text-secondary-fixed-dim mb-2 uppercase flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">psychology</span>
+                    Sensitivity Simulator
+                </h4>
+<p class="text-[10px] font-code-data text-outline leading-tight uppercase mb-3">Adjust detection threshold to uncover latent connections between distant fields.</p>
+<div class="relative w-full h-1 bg-surface-container rounded-full overflow-hidden mb-3">
+<div class="absolute left-0 top-0 h-full w-[75%] bg-secondary-fixed-dim shadow-[0_0_10px_#d0bcff]"></div>
+</div>
+<div class="flex justify-between font-code-data text-[9px] text-secondary-fixed-dim font-bold">
+<span>COARSE</span>
+<span>GRANULAR (75%)</span>
+</div>
+</div>
+</div>
+<div class="p-5 bg-surface-container-lowest border-t border-outline-variant/30">
+<button class="w-full bg-transparent border-2 border-primary-fixed-dim text-primary-fixed-dim font-label-caps text-[12px] font-bold py-4 hover:bg-primary-fixed-dim hover:text-on-primary-fixed transition-all flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(0,219,231,0.15)] group">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">filter_list</span>
+                CONFIGURE FIELD FILTERS
+            </button>
+</div>
+</aside>
+<!-- Visual Legend (Bottom Left) -->
+<div class="absolute bottom-8 right-8 flex flex-col gap-3">
+<div class="flex items-center gap-4 glass-panel px-4 py-2 border border-outline-variant/30">
+<div class="w-3 h-3 rounded-full bg-primary-fixed-dim shadow-[0_0_12px_#00dbe7] border border-white/40"></div>
+<span class="font-code-data text-[11px] font-bold uppercase text-on-surface tracking-wider">TEACHING NODE</span>
+</div>
+<div class="flex items-center gap-4 glass-panel px-4 py-2 border border-outline-variant/30">
+<div class="w-10 h-[2px] bg-secondary-fixed-dim shadow-[0_0_10px_#d0bcff]"></div>
+<span class="font-code-data text-[11px] font-bold uppercase text-on-surface tracking-wider">LOGIC LINK</span>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="fixed bottom-0 left-0 w-full z-50 h-8 flex items-center justify-between px-margin-page bg-surface-container-lowest border-t border-outline-variant/30">
+<div class="flex gap-8 items-center">
+<div class="flex items-center gap-2">
+<span class="font-label-caps text-[11px] text-primary-fixed-dim font-bold uppercase tracking-widest">ARXIV_EXPLORER</span>
+<span class="text-outline-variant">/</span>
+<span class="font-label-caps text-[11px] text-on-surface/60 font-bold uppercase">OPTICAL_LAB</span>
+</div>
+<div class="font-code-data text-[10px] text-outline font-bold flex gap-6 uppercase">
+<a class="hover:text-primary-fixed-dim transition-colors" href="#">LIVE_FEED</a>
+<a class="hover:text-primary-fixed-dim transition-colors" href="#">DIAGNOSTICS</a>
+<a class="hover:text-primary-fixed-dim transition-colors" href="#">VAULT</a>
+</div>
+</div>
+<div class="font-code-data text-[10px] text-on-surface-variant font-bold uppercase tracking-widest">
+        SYSTEM_STABILITY: 99.98% // NODES_ONLINE: 4,092
+    </div>
+</footer>
+<!-- D3 Script for Network Graph -->
+<script>
+    const width = window.innerWidth - 80;
+    const height = window.innerHeight - 96;
+
+    const svg = d3.select("#network-graph")
+        .append("svg")
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", [0, 0, width, height]);
+
+    const g = svg.append("g");
+
+    // Zoom functionality
+    const zoom = d3.zoom()
+        .extent([[0, 0], [width, height]])
+        .scaleExtent([0.5, 4])
+        .on("zoom", ({transform}) => {
+            g.attr("transform", transform);
+        });
+
+    svg.call(zoom);
+
+    const nodes = [
+        { id: "Physics", group: 1, size: 32, label: "Physics" }, // Primary Teaching Node
+        { id: "Quantum Computing", group: 1, size: 18, label: "Quantum Computing" },
+        { id: "Relativity", group: 1, size: 14, label: "Relativity" },
+        { id: "Condensed Matter", group: 1, size: 20, label: "Condensed Matter" },
+        { id: "CS", group: 2, size: 28, label: "Computer Science" }, // Primary Teaching Node
+        { id: "Machine Learning", group: 2, size: 22, label: "Machine Learning" },
+        { id: "Data Structures", group: 2, size: 14, label: "Data Structures" },
+        { id: "Security", group: 2, size: 16, label: "Security" },
+        { id: "Math", group: 3, size: 26, label: "Mathematics" }, // Primary Teaching Node
+        { id: "Topology", group: 3, size: 18, label: "Topology" },
+        { id: "Statistics", group: 3, size: 18, label: "Statistics" },
+        { id: "Logic", group: 3, size: 14, label: "Logic" },
+        { id: "Neuroscience", group: 4, size: 18, label: "Neuroscience" },
+        { id: "Biophysics", group: 1, size: 16, label: "Biophysics" },
+        { id: "Cryptography", group: 2, size: 15, label: "Cryptography" },
+    ];
+
+    const links = [
+        { source: "Physics", target: "Quantum Computing" },
+        { source: "Physics", target: "Relativity" },
+        { source: "Physics", target: "Condensed Matter" },
+        { source: "CS", target: "Machine Learning" },
+        { source: "CS", target: "Data Structures" },
+        { source: "CS", target: "Security" },
+        { source: "Math", target: "Topology" },
+        { source: "Math", target: "Statistics" },
+        { source: "Math", target: "Logic" },
+        { source: "Physics", target: "Math" },
+        { source: "CS", target: "Math" },
+        { source: "Quantum Computing", target: "CS" },
+        { source: "Machine Learning", target: "Statistics" },
+        { source: "Condensed Matter", target: "Topology" },
+        { source: "Neuroscience", target: "Machine Learning" },
+        { source: "Biophysics", target: "Physics" },
+        { source: "Cryptography", target: "Security" },
+        { source: "Cryptography", target: "Math" }
+    ];
+
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(180))
+        .force("charge", d3.forceManyBody().strength(-600))
+        .force("center", d3.forceCenter(width / 2.8, height / 2));
+
+    const link = g.append("g")
+        .selectAll("line")
+        .data(links)
+        .join("line")
+        .attr("stroke", "#5516be")
+        .attr("stroke-width", 2)
+        .attr("stroke-opacity", 0.7)
+        .attr("filter", "drop-shadow(0 0 8px rgba(85, 22, 190, 0.8))");
+
+    const node = g.append("g")
+        .selectAll("g")
+        .data(nodes)
+        .join("g")
+        .attr("cursor", "grab")
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+
+    // Outer glow ring
+    node.append("circle")
+        .attr("r", d => d.size)
+        .attr("fill", "#00dbe7")
+        .attr("fill-opacity", 0.85)
+        .attr("filter", "drop-shadow(0 0 15px rgba(0, 219, 231, 0.9))")
+        .attr("stroke", "rgba(255, 255, 255, 0.3)")
+        .attr("stroke-width", 1);
+
+    // Inner core
+    node.append("circle")
+        .attr("r", d => d.size * 0.4)
+        .attr("fill", "#ffffff")
+        .attr("fill-opacity", 1);
+
+    // High contrast labels
+    node.append("text")
+        .text(d => d.label)
+        .attr("x", d => d.size + 10)
+        .attr("y", 6)
+        .attr("fill", "#ffffff")
+        .attr("font-family", "'Space Mono', monospace")
+        .attr("font-size", d => d.size > 25 ? "14px" : "12px")
+        .attr("font-weight", d => d.size > 25 ? "bold" : "normal")
+        .attr("class", "uppercase pointer-events-none select-none tracking-wider")
+        .attr("style", "text-shadow: 2px 2px 4px rgba(0,0,0,0.8)");
+
+    simulation.on("tick", () => {
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+
+        node
+            .attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+
+    function dragstarted(event) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        event.subject.fx = event.subject.x;
+        event.subject.fy = event.subject.y;
+    }
+
+    function dragged(event) {
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+    }
+
+    function dragended(event) {
+        if (!event.active) simulation.alphaTarget(0);
+        event.subject.fx = null;
+        event.subject.fy = null;
+    }
+
+    window.addEventListener('resize', () => {
+        const newWidth = window.innerWidth - 80;
+        const newHeight = window.innerHeight - 96;
+        svg.attr("width", newWidth).attr("height", newHeight);
+        simulation.force("center", d3.forceCenter(newWidth / 2.8, newHeight / 2)).alpha(0.3).restart();
+    });
+</script>
+<!-- Scanline Overlay -->
+<div class="scanline-effect"></div>
+</body></html>

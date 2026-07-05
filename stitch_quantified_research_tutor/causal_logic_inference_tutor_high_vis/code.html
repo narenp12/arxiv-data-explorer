@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Quantum Archivist | Causal Inference</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&amp;family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed-dim": "#d0bcff",
+                    "on-surface": "#e5e2e1",
+                    "surface-bright": "#3a3939",
+                    "on-error": "#690005",
+                    "tertiary-container": "#dbdbdb",
+                    "inverse-primary": "#00696f",
+                    "on-tertiary": "#2f3131",
+                    "on-surface-variant": "#b9cacb",
+                    "on-error-container": "#ffdad6",
+                    "primary-fixed-dim": "#00dbe7",
+                    "inverse-on-surface": "#313030",
+                    "error-container": "#93000a",
+                    "error": "#ffb4ab",
+                    "on-tertiary-fixed": "#1a1c1c",
+                    "surface-container-lowest": "#0e0e0e",
+                    "surface-variant": "#353534",
+                    "secondary-fixed": "#e9ddff",
+                    "outline": "#849495",
+                    "surface-dim": "#131313",
+                    "primary-container": "#00f2ff",
+                    "on-primary": "#00363a",
+                    "outline-variant": "#3a494b",
+                    "on-primary-fixed-variant": "#004f54",
+                    "surface-container-highest": "#353534",
+                    "primary-fixed": "#74f5ff",
+                    "on-secondary-fixed": "#23005c",
+                    "on-primary-container": "#006a71",
+                    "inverse-surface": "#e5e2e1",
+                    "surface-tint": "#00dbe7",
+                    "surface-container": "#201f1f",
+                    "on-tertiary-container": "#5e6060",
+                    "on-secondary-fixed-variant": "#5516be",
+                    "on-primary-fixed": "#002022",
+                    "secondary": "#d0bcff",
+                    "primary": "#e1fdff",
+                    "surface-container-high": "#2a2a2a",
+                    "on-tertiary-fixed-variant": "#454747",
+                    "surface": "#131313",
+                    "tertiary": "#f7f8f8",
+                    "tertiary-fixed-dim": "#c6c6c7",
+                    "on-secondary": "#3c0091",
+                    "surface-container-low": "#1c1b1b",
+                    "background": "#131313",
+                    "on-secondary-container": "#c4abff",
+                    "secondary-container": "#571bc1",
+                    "tertiary-fixed": "#e2e2e2",
+                    "on-background": "#e5e2e1"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "col-gap": "24px",
+                    "container-max": "1440px",
+                    "margin-page": "48px",
+                    "gutter": "1px",
+                    "row-gap": "24px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Playfair Display"],
+                    "body-sm": ["Space Mono"],
+                    "headline-lg": ["Playfair Display"],
+                    "label-caps": ["Space Mono"],
+                    "display-lg": ["Playfair Display"],
+                    "code-data": ["Space Mono"],
+                    "headline-lg-mobile": ["Playfair Display"],
+                    "body-lg": ["Space Mono"]
+            },
+            "fontSize": {
+                    "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "500"}],
+                    "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg": ["40px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                    "display-lg": ["64px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "code-data": ["13px", {"lineHeight": "1.4", "letterSpacing": "-0.01em", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["32px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                    "body-lg": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+        @keyframes pulse-intense {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+        @keyframes glitch {
+            0% { clip-path: inset(10% 0 30% 0); transform: translate(-2px, 2px); }
+            20% { clip-path: inset(40% 0 10% 0); transform: translate(2px, -2px); }
+            40% { clip-path: inset(80% 0 5% 0); transform: translate(-1px, 1px); }
+            60% { clip-path: inset(20% 0 60% 0); transform: translate(1px, -1px); }
+            80% { clip-path: inset(5% 0 85% 0); transform: translate(-2px, 0px); }
+            100% { clip-path: inset(10% 0 30% 0); transform: translate(-2px, 2px); }
+        }
+        .glitch-hover:hover .glitch-text {
+            animation: glitch 0.3s infinite linear alternate-reverse;
+            color: #00dbe7;
+            text-shadow: 2px 0 #5516be, -2px 0 #ffb4ab;
+        }
+        .dot-matrix {
+            background-image: radial-gradient(rgba(225, 253, 255, 0.08) 1.5px, transparent 0);
+            background-size: 24px 24px;
+        }
+        .scanning-bar {
+            height: 3px;
+            width: 100%;
+            background: linear-gradient(to right, transparent, #00dbe7, transparent);
+            position: absolute;
+            animation: scanline 10s linear infinite;
+            filter: drop-shadow(0 0 5px #00dbe7);
+        }
+        .perspective-glass {
+            transform: perspective(1000px) rotateX(1deg);
+            transition: transform 0.1s ease-out;
+        }
+        .vibrant-tracer {
+            filter: drop-shadow(0 0 8px rgba(0, 219, 231, 0.8));
+        }
+        .vibrant-glow-purple {
+            filter: drop-shadow(0 0 8px rgba(208, 188, 255, 0.8));
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #00dbe7;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 0 10px #00dbe7;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-lg min-h-screen selection:bg-primary-fixed-dim selection:text-on-primary-fixed overflow-x-hidden">
+<!-- Header Navigation -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-page h-16 bg-surface/80 backdrop-blur-2xl border-b border-primary/20">
+<div class="flex items-center gap-8">
+<span class="font-headline-md text-headline-md font-bold tracking-tighter text-primary-fixed-dim">arXiv Explorer</span>
+<nav class="hidden md:flex gap-6">
+<a class="font-label-caps text-label-caps transition-all duration-300 ease-in-out text-on-surface-variant hover:text-primary hover:bg-surface-variant/30 px-2 py-1" href="#">Scan</a>
+<a class="font-label-caps text-label-caps transition-all duration-300 ease-in-out text-primary border-b-2 border-primary px-2 py-1" href="#">Epoch</a>
+<a class="font-label-caps text-label-caps transition-all duration-300 ease-in-out text-on-surface-variant hover:text-primary hover:bg-surface-variant/30 px-2 py-1" href="#">Coordinates</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative">
+<input class="bg-surface-container-low border border-outline-variant text-code-data font-code-data focus:border-primary focus:ring-1 focus:ring-primary transition-all duration-300 outline-none px-3 py-1.5 w-56 placeholder:text-on-surface-variant/40" placeholder="QUERY SIGNAL..." type="text"/>
+</div>
+<button class="material-symbols-outlined text-primary-fixed-dim hover:text-primary transition-colors p-1.5 bg-surface-variant/20 rounded">terminal</button>
+<button class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">settings</button>
+</div>
+</header>
+<!-- Side Navigation -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-20 flex flex-col items-center py-6 z-40 bg-surface/60 backdrop-blur-3xl border-r border-primary/10">
+<div class="mb-10 text-center">
+<div class="font-headline-md text-headline-md text-primary font-bold">SR</div>
+<div class="font-label-caps text-[8px] tracking-[0.2em] text-primary/60">INSTRUMENT-01</div>
+</div>
+<div class="flex flex-col gap-8 flex-grow">
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<div class="p-3 transition-all duration-300 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">blur_on</span>
+</div>
+<span class="font-label-caps text-[9px] text-on-surface-variant">PHYSICS</span>
+</div>
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<div class="p-3 transition-all duration-300 rounded-lg text-primary shadow-[0_0_20px_rgba(0,219,231,0.4)] bg-primary/20">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">memory</span>
+</div>
+<span class="font-label-caps text-[9px] text-primary font-bold">CS</span>
+</div>
+<div class="group flex flex-col items-center gap-1 cursor-pointer">
+<div class="p-3 transition-all duration-300 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">functions</span>
+</div>
+<span class="font-label-caps text-[9px] text-on-surface-variant">MATH</span>
+</div>
+</div>
+<button class="mt-auto font-label-caps text-[9px] border border-primary/30 px-2 py-4 vertical-text transform rotate-180 hover:bg-primary/10 hover:text-primary transition-colors uppercase tracking-widest">Field Filter</button>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-20 mt-16 p-margin-page dot-matrix relative min-h-[calc(100vh-64px-32px)]">
+<div class="scanning-bar"></div>
+<div class="relative z-10 grid grid-cols-12 gap-col-gap">
+<!-- Page Title & Core Status -->
+<div class="col-span-12 mb-10 border-l-4 border-primary-fixed-dim pl-8 py-3 bg-primary/5">
+<h1 class="font-headline-lg text-headline-lg text-white uppercase tracking-[0.15em]">Causal Logic &amp; Inference Tutor</h1>
+<div class="flex gap-8 mt-3 font-code-data text-body-sm text-on-surface-variant">
+<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-primary rounded-full"></span>SECTOR: <b class="text-primary-fixed">Q-ARCHIVE_019</b></span>
+<span class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-primary rounded-full"></span>SIGNAL: <b class="text-primary-fixed">STABLE [98.2%]</b></span>
+<span class="text-secondary animate-pulse flex items-center gap-2">● <span class="font-bold">LIVE FEED ACTIVE</span></span>
+</div>
+</div>
+<!-- Left Panel: Granger Causality Diagram -->
+<div class="col-span-12 lg:col-span-8 perspective-glass">
+<div class="bg-surface-container-lowest/80 backdrop-blur-3xl border border-primary/30 p-8 h-[650px] relative overflow-hidden group shadow-2xl">
+<div class="absolute top-4 left-6 font-label-caps text-label-caps text-primary tracking-widest font-bold">PROJECTION: CAUSAL_VECTOR_FLOW</div>
+<div class="absolute top-4 right-6 flex items-center gap-4">
+<div class="flex items-center gap-2 bg-secondary/20 border border-secondary/50 px-3 py-1 rounded">
+<span class="material-symbols-outlined text-[14px] text-secondary font-bold">info</span>
+<span class="font-label-caps text-[10px] text-secondary-fixed-dim font-bold">CORRELATION ≠ CAUSATION</span>
+</div>
+<div class="flex items-center gap-2 bg-error/10 border border-error/30 px-3 py-1 rounded">
+<span class="w-2 h-2 rounded-full bg-error animate-ping"></span>
+<span class="font-code-data text-[10px] text-error font-bold uppercase tracking-tighter">Anomaly Detection: OFF</span>
+</div>
+</div>
+<!-- Diagram Content -->
+<div class="w-full h-full flex items-center justify-center p-12">
+<svg class="w-full h-full drop-shadow-xl" viewbox="0 0 800 400">
+<defs>
+<lineargradient id="grad1" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop offset="0%" style="stop-color:#00dbe7;stop-opacity:0.4"></stop>
+<stop offset="100%" style="stop-color:#00dbe7;stop-opacity:1"></stop>
+</lineargradient>
+<filter id="glow-vibrant">
+<fegaussianblur result="coloredBlur" stddeviation="4"></fegaussianblur>
+<femerge>
+<femergenode in="coloredBlur"></femergenode>
+<femergenode in="SourceGraphic"></femergenode>
+</femerge>
+</filter>
+</defs>
+<!-- Nodes -->
+<g class="nodes">
+<circle class="vibrant-tracer" cx="150" cy="200" fill="#00dbe7" fill-opacity="0.1" r="45" stroke="#00dbe7" stroke-width="2.5"></circle>
+<text class="font-code-data text-[14px] font-bold" fill="#00dbe7" text-anchor="middle" x="150" y="205">X(t)</text>
+<circle class="vibrant-glow-purple" cx="400" cy="100" fill="#d0bcff" fill-opacity="0.1" r="50" stroke="#d0bcff" stroke-width="2.5"></circle>
+<text class="font-code-data text-[14px] font-bold" fill="#d0bcff" text-anchor="middle" x="400" y="105">Y(t-1)</text>
+<circle cx="400" cy="300" fill="none" r="40" stroke="#849495" stroke-dasharray="2" stroke-width="2"></circle>
+<text class="font-code-data text-[14px] font-bold" fill="#849495" text-anchor="middle" x="400" y="305">Z(t)</text>
+<circle cx="650" cy="200" fill="rgba(0,219,231,0.2)" filter="url(#glow-vibrant)" r="60" stroke="#00dbe7" stroke-width="4"></circle>
+<text class="font-label-caps text-[16px] font-bold" fill="#00dbe7" text-anchor="middle" x="650" y="205">TARGET</text>
+</g>
+<!-- Edges -->
+<g class="edges">
+<path class="vibrant-tracer" d="M 195 200 L 350 100" fill="none" marker-end="url(#arrow)" stroke="url(#grad1)" stroke-width="3"></path>
+<path class="animate-pulse vibrant-tracer" d="M 210 200 L 590 200" fill="none" stroke="url(#grad1)" stroke-dasharray="10,5" stroke-width="4"></path>
+<path class="vibrant-glow-purple" d="M 450 100 L 590 180" fill="none" stroke="#d0bcff" stroke-width="3"></path>
+<path d="M 400 260 L 400 150" fill="none" stroke="#849495" stroke-dasharray="6" stroke-width="2"></path>
+</g>
+</svg>
+</div>
+<!-- Metrics Panel -->
+<div class="absolute bottom-8 left-8 right-8 grid grid-cols-3 gap-6">
+<div class="bg-surface-container-low border-2 border-primary/40 p-5 glitch-hover cursor-crosshair">
+<div class="flex justify-between items-start mb-2">
+<div class="font-label-caps text-[11px] text-primary font-bold uppercase tracking-wider">Causal Edge Posterior</div>
+<span class="text-[11px] text-primary font-code-data font-bold">σ = 0.042</span>
+</div>
+<div class="font-code-data text-3xl text-white font-bold glitch-text">λ = 0.8942</div>
+<div class="mt-3 flex items-end gap-[2px] h-10">
+<div class="flex-grow bg-primary/20 h-[10%]"></div>
+<div class="flex-grow bg-primary/30 h-[30%]"></div>
+<div class="flex-grow bg-primary/50 h-[70%]"></div>
+<div class="flex-grow bg-primary h-full shadow-[0_0_10px_#00dbe7]"></div>
+<div class="flex-grow bg-primary/50 h-[70%]"></div>
+<div class="flex-grow bg-primary/30 h-[30%]"></div>
+<div class="flex-grow bg-primary/20 h-[10%]"></div>
+</div>
+</div>
+<div class="bg-surface-container-low border-2 border-secondary/40 p-5 glitch-hover cursor-crosshair">
+<div class="font-label-caps text-[11px] text-secondary font-bold uppercase tracking-wider mb-2">Lag Coefficient (τ)</div>
+<div class="font-code-data text-3xl text-white font-bold glitch-text">Δt + 14ms</div>
+<div class="w-full bg-surface-container-high h-2 mt-4 relative">
+<div class="bg-secondary w-[62%] h-full shadow-[0_0_10px_#d0bcff]"></div>
+</div>
+</div>
+<div class="bg-surface-container-low border-2 border-white/20 p-5 glitch-hover cursor-crosshair">
+<div class="font-label-caps text-[11px] text-on-surface uppercase tracking-wider mb-2">P-Value Significance</div>
+<div class="font-code-data text-3xl text-primary-fixed-dim font-bold glitch-text">0.00031</div>
+<div class="w-full bg-surface-container-high h-2 mt-4 relative">
+<div class="bg-white w-[98%] h-full"></div>
+</div>
+<div class="mt-2 text-[9px] font-bold text-primary-fixed/80 text-right uppercase">High Confidence</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Panel -->
+<div class="col-span-12 lg:col-span-4 flex flex-col gap-row-gap">
+<!-- Bayesian Posterior Map -->
+<div class="bg-surface-container-lowest border border-primary/20 p-6 flex-grow relative overflow-hidden group shadow-lg">
+<div class="absolute inset-0 opacity-15 mix-blend-overlay">
+<div class="w-full h-full bg-cover bg-center" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuC0X3a1SJrkrBhu7C_bV8wYoYfGq5hrkhNxQkKJyUyxu42VOBbpvk_lZX4sx2vcXfc6jXmqgP-duPLmLC27rayiqZ-76xGCPOGRVnMIuMOcJYcOqjr-svDZ5XZ-p_h4Pv_h7y-wgqzfLFNYr2wfIGDxklnetyoEBHjonpd9RKBqhhUQFKgInRrlQYN8_wM4qfiy8oEIimdxZDkKZ1SbcpF4JY9yL7enhEr23B5Hy3SBbeNrgoS0h6c')"></div>
+</div>
+<div class="relative z-10">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h3 class="font-label-caps text-label-caps text-primary-fixed-dim font-bold tracking-widest">Bayesian Posterior Map</h3>
+<p class="font-code-data text-[11px] text-on-surface-variant mt-1 font-bold">SPATIO-TEMPORAL CLUSTERS (Σ-7)</p>
+</div>
+<span class="material-symbols-outlined text-primary text-2xl animate-pulse">auto_awesome</span>
+</div>
+<div class="space-y-4 bg-black/40 p-4 border border-white/5 backdrop-blur-md">
+<div class="flex items-center justify-between border-b border-white/10 pb-2">
+<span class="font-code-data text-[13px] text-white">Cluster_Alpha</span>
+<span class="font-code-data text-[13px] text-primary font-bold">μ: 0.42</span>
+</div>
+<div class="flex items-center justify-between border-b border-white/10 pb-2">
+<span class="font-code-data text-[13px] text-white">Cluster_Beta</span>
+<span class="font-code-data text-[13px] text-primary font-bold">μ: 0.18</span>
+</div>
+<div class="flex items-center justify-between border-b border-white/10 pb-2">
+<span class="font-code-data text-[13px] text-white">Cluster_Gamma</span>
+<span class="font-code-data text-[13px] text-primary font-bold">μ: 0.77</span>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-primary/20">
+<h5 class="font-label-caps text-[11px] text-primary font-bold mb-5 tracking-widest uppercase">Sensitivity Simulator</h5>
+<div class="space-y-6">
+<div class="space-y-2">
+<div class="flex justify-between font-code-data text-[11px]">
+<span class="text-on-surface font-bold uppercase">Time Lag (τ)</span>
+<span class="text-primary font-bold bg-primary/10 px-2">14ms</span>
+</div>
+<input class="w-full h-1.5 bg-surface-container-highest rounded-full appearance-none cursor-pointer accent-primary" max="100" min="1" type="range" value="14"/>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between font-code-data text-[11px]">
+<span class="text-on-surface font-bold uppercase">Signal Noise</span>
+<span class="text-secondary font-bold bg-secondary/10 px-2">LOW (20%)</span>
+</div>
+<input class="w-full h-1.5 bg-surface-container-highest rounded-full appearance-none cursor-pointer accent-secondary" max="100" min="1" type="range" value="20"/>
+</div>
+</div>
+<p class="mt-4 font-body-sm text-[11px] text-on-surface-variant/80 italic font-medium leading-relaxed border-l-2 border-white/10 pl-3">Adjust parameters to observe model convergence shifts in real-time.</p>
+</div>
+</div>
+</div>
+<!-- Logic Explorer & Info -->
+<div class="bg-surface-container-high border-t-4 border-primary p-8 shadow-xl">
+<h4 class="font-label-caps text-label-caps text-white font-bold mb-6 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">menu_book</span> LOGIC EXPLORER
+                </h4>
+<div class="space-y-8">
+<div class="border-l-4 border-primary/60 pl-6 py-1">
+<p class="font-code-data text-[12px] text-primary font-bold uppercase mb-2 tracking-wider">The Core Principle</p>
+<p class="font-body-sm text-[15px] leading-relaxed text-white font-medium">
+                            Field <span class="text-primary font-bold underline decoration-primary/40 underline-offset-4">X</span> predicts Field <span class="text-primary font-bold underline decoration-primary/40 underline-offset-4">Y</span> if past values of X contain unique information that improves the prediction of Y beyond its own history.
+                        </p>
+</div>
+<div class="bg-primary/10 p-5 border border-primary/30 rounded-lg">
+<p class="font-label-caps text-[11px] text-secondary font-bold mb-2 tracking-widest">LITERACY CHECK</p>
+<p class="font-body-sm text-[13px] italic text-on-surface font-medium leading-relaxed">
+                            "Granger Causality identifies <strong>predictive precedence</strong> and information flow, not necessarily a physical cause-and-effect mechanism."
+                        </p>
+</div>
+</div>
+</div>
+<!-- CTA/Status -->
+<div class="bg-primary-container text-on-primary-container p-6 border-l-4 border-white shadow-lg">
+<h4 class="font-label-caps text-label-caps font-bold mb-2 uppercase tracking-tighter">Inference Engine Active</h4>
+<p class="font-body-sm text-[13px] leading-relaxed font-bold">Processing 4,092 nodes via Quantum-Granger protocol. Bayesian priors stabilized for Sector 019 noise levels.</p>
+<button class="mt-5 w-full bg-on-primary-container text-primary-container py-3 rounded-none font-label-caps text-[12px] font-bold hover:bg-white hover:text-black transition-all active:scale-95 shadow-lg uppercase tracking-widest">Recalibrate Priors</button>
+</div>
+</div>
+<!-- Bottom Bento Grid -->
+<div class="col-span-12 grid grid-cols-1 md:grid-cols-4 gap-col-gap mt-10">
+<div class="bg-surface/40 backdrop-blur-xl border border-primary/20 p-6 flex flex-col gap-2 group hover:bg-primary/5 transition-colors border-t-2">
+<span class="font-label-caps text-[11px] text-primary font-bold tracking-widest">NODE_DENSITY</span>
+<span class="font-code-data text-2xl text-white font-bold group-hover:text-primary transition-colors">4.82 nodes/mm²</span>
+</div>
+<div class="bg-surface/40 backdrop-blur-xl border border-primary/20 p-6 flex flex-col gap-2 group hover:bg-primary/5 transition-colors border-t-2">
+<span class="font-label-caps text-[11px] text-primary font-bold tracking-widest">TIME_VARIANT</span>
+<span class="font-code-data text-2xl text-white font-bold group-hover:text-primary transition-colors uppercase">Non-Stationary</span>
+</div>
+<div class="bg-surface/40 backdrop-blur-xl border border-primary/20 p-6 flex flex-col gap-2 group hover:bg-primary/5 transition-colors border-t-2">
+<span class="font-label-caps text-[11px] text-primary font-bold tracking-widest">F-STATISTIC</span>
+<span class="font-code-data text-2xl text-white font-bold group-hover:text-primary transition-colors">F = 112.4</span>
+</div>
+<div class="bg-surface/40 backdrop-blur-xl border border-primary/20 p-6 flex flex-col gap-2 group hover:bg-primary/5 transition-colors border-t-2">
+<span class="font-label-caps text-[11px] text-primary font-bold tracking-widest">ARCHIVAL_DEPTH</span>
+<span class="font-code-data text-2xl text-white font-bold group-hover:text-primary transition-colors uppercase">1.2 PB Scan</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="fixed bottom-0 left-0 w-full z-50 h-10 flex items-center justify-between px-margin-page border-t border-primary/30 bg-surface-container-lowest/90 backdrop-blur-md text-on-surface-variant font-code-data text-[11px] font-bold">
+<div class="flex items-center gap-8">
+<span class="text-primary font-label-caps tracking-widest">SYSTEM UPTIME: 99.98% | NODES: 4,092 ACTIVE</span>
+<div class="flex gap-6 uppercase tracking-tighter">
+<a class="hover:text-primary transition-colors flex items-center gap-1" href="#"><span class="w-1.5 h-1.5 bg-primary rounded-full"></span> Live Signal</a>
+<a class="hover:text-primary transition-colors" href="#">Diagnostics</a>
+<a class="hover:text-primary transition-colors" href="#">Archives</a>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<span class="w-2 h-2 bg-primary rounded-full animate-pulse shadow-[0_0_8px_#00dbe7]"></span>
+<span class="text-white">LAST SYNC: 11:04:22 UTC</span>
+</div>
+</footer>
+<!-- Floating Action Button -->
+<button class="fixed bottom-14 right-12 w-16 h-16 bg-primary rounded-full flex items-center justify-center text-on-primary shadow-[0_0_30px_rgba(0,219,231,0.6)] hover:scale-110 active:scale-90 transition-transform z-50 border-2 border-white">
+<span class="material-symbols-outlined text-3xl font-bold">add_chart</span>
+</button>
+<script>
+    // Precision interaction for the glass perspective
+    document.addEventListener('mousemove', (e) => {
+        const glass = document.querySelector('.perspective-glass');
+        if (glass) {
+            const xAxis = (window.innerWidth / 2 - e.pageX) / 150;
+            const yAxis = (window.innerHeight / 2 - e.pageY) / 150;
+            glass.style.transform = `perspective(1000px) rotateY(${xAxis}deg) rotateX(${-yAxis}deg)`;
+        }
+    });
+
+    console.log("%c [QUANTUM ARCHIVIST] CAUSAL ENGINE INITIALIZED ", "background: #00dbe7; color: #000; font-weight: bold; padding: 4px;");
+</script>
+</body></html>
