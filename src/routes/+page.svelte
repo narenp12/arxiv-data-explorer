@@ -2,6 +2,7 @@
 	import { onMount } from "svelte";
 	import { base } from "$app/paths";
 	import type { NetworkStats } from "$lib/types";
+	import CategoryGraph from "$lib/components/CategoryGraph.svelte";
 
 	let stats = $state<NetworkStats | null>(null);
 	let error = $state(false);
@@ -68,18 +69,24 @@
 		</div>
 	</div>
 
-	<!-- Placeholder cards -->
-	<div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-		<a href="/categories" class="group rounded-xl border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-700">
-			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
-				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	<!-- Category graph -->
+	<div class="mb-16 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
+		<div class="mb-3 flex items-center gap-2 px-1">
+			<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+				<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
 				</svg>
 			</div>
-			<h3 class="mb-2 font-semibold text-slate-900 dark:text-slate-100">Category Graph</h3>
-			<p class="text-sm text-slate-500 dark:text-slate-400">Explore the hierarchical relationships between arXiv categories.</p>
-		</a>
+			<div>
+				<h3 class="font-semibold text-slate-900 dark:text-slate-100">Category Graph</h3>
+				<p class="text-xs text-slate-500 dark:text-slate-400">Force-directed co-occurrence network of {stats ? stats.categories : ""} arXiv categories. Node size = paper count, color = domain.</p>
+			</div>
+		</div>
+		<CategoryGraph />
+	</div>
 
+	<!-- Link cards -->
+	<div class="grid gap-6 sm:grid-cols-2">
 		<a href="/papers" class="group rounded-xl border border-slate-200 bg-white p-6 transition-colors hover:border-blue-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-blue-700">
 			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
 				<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
