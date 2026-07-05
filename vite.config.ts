@@ -18,6 +18,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/s2/, ""),
       },
+      "/api/openalex": {
+        target: "https://api.openalex.org",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/openalex/, ""),
+      },
     },
   },
 });
