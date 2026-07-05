@@ -200,6 +200,66 @@ def build_category_graph(df: pl.DataFrame) -> dict:
     }
 
 
+def build_author_graph(df: pl.DataFrame) -> dict:
+    name_expr = (
+        pl.element().list.get(1, null_on_oob=True).fill_null("")
+        + " "
+        + pl.element().list.get(0, null_on_oob=True).fill_null("")
+    ).str.strip_chars()
+
+    author_counts = df.select(
+        pl.col("authors_parsed").list.eval(name_expr).alias("full_name")
+    ).explode("full_name").group_by("full_name").agg(
+        pl.len().alias("weight")
+    ).sort("weight", descending=True)
+
+    top_authors = author_counts.head(50000)
+    author_set = set(top_authors["full_name"].to_list())
+
+    exploded = df.select(
+        pl.int_range(0, pl.len()).alias("_row_idx"),
+        pl.col("authors_parsed").list.eval(name_expr).alias("author"),
+    ).explode("author").filter(pl.col("author").is_in(author_set))
+
+    pairs = exploded.join(
+        exploded, on="_row_idx", suffix="_b"
+    ).filter(pl.col("author") < pl.col("author_b")).group_by(
+        ["author", "author_b"]
+    ).agg(pl.len().alias("count")).sort("count", descending=True)
+
+    node_weight = {r["full_name"]: r["weight"] for r in top_authors.iter_rows(named=True)}
+    nodes = [{"id": name, "label": name, "weight": w} for name, w in node_weight.items()]
+    edges = [{"source": r["author"], "target": r["author_b"], "weight": r["count"]}
+             for r in pairs.head(200000).iter_rows(named=True)]
+
+    return {"nodes": nodes, "edges": edges, "metadata": {"total_nodes": len(nodes), "total_edges": len(edges)}}
+
+
+def build_author_rankings(df: pl.DataFrame) -> list[dict]:
+    author_counts = df.select(
+        pl.col("authors_parsed")
+        .list.eval(
+            (pl.element().list.get(1, null_on_oob=True).fill_null("")
+             + " "
+             + pl.element().list.get(0, null_on_oob=True).fill_null(""))
+            .str.strip_chars()
+        )
+        .alias("full_name")
+    ).explode("full_name").group_by("full_name").agg(
+        pl.len().alias("papers")
+    ).sort("papers", descending=True).head(1000)
+
+    max_papers = author_counts["papers"].max()
+    result = []
+    for r in author_counts.iter_rows(named=True):
+        result.append({
+            "name": r["full_name"],
+            "papers": r["papers"],
+            "relative": round(r["papers"] / max_papers * 100) if max_papers else 0,
+        })
+    return result
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -225,6 +285,16 @@ if __name__ == "__main__":
     cat_graph = build_category_graph(df)
     (DATA_DIR / "category_graph.json").write_text(json.dumps(cat_graph, separators=(",", ":")))
     print(f"  {cat_graph['metadata']['total_nodes']} nodes, {cat_graph['metadata']['total_edges']} edges")
+
+    print("Building author graph\u2026")
+    author_graph = build_author_graph(df)
+    (DATA_DIR / "author_graph.json").write_text(json.dumps(author_graph, separators=(",", ":")))
+    print(f"  {author_graph['metadata']['total_nodes']:,} nodes, {author_graph['metadata']['total_edges']:,} edges")
+
+    print("Building author rankings\u2026")
+    author_rankings = build_author_rankings(df)
+    (DATA_DIR / "author_rankings.json").write_text(json.dumps(author_rankings, separators=(",", ":")))
+    print(f"  {len(author_rankings):,} ranked authors")
 
     df.write_parquet(DATA_DIR / "papers.parquet")
 
