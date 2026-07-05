@@ -54,14 +54,24 @@
 			.attr("stroke", "var(--outline)").attr("stroke-width", 0.3).attr("stroke-opacity", 0.3)
 			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
+		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
 		g.selectAll("circle").data(nodes).join("circle")
-			.attr("r", (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15)))
+			.attr("r", radius)
 			.attr("fill", "var(--primary)").attr("fill-opacity", 0.5)
 			.attr("stroke", "var(--primary-container)").attr("stroke-width", 0.5)
 			.attr("cursor", "pointer")
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
 			.on("click", (_e: MouseEvent, d: any) => goto(`/authors/${encodeURIComponent(d.id)}`))
 			.append("title").text((d: any) => `${d.label} (${d.weight} papers)`);
+
+		// Label the dozen most prolific nodes so the graph reads as data, not decoration.
+		const labelled = [...nodes].sort((a, b) => b.weight - a.weight).slice(0, 12);
+		g.selectAll("text").data(labelled).join("text")
+			.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - radius(d) - 3)
+			.attr("text-anchor", "middle")
+			.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
+			.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
+			.text((d: any) => d.label);
 	}
 </script>
 

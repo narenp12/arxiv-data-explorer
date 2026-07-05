@@ -126,7 +126,7 @@
 					{#each sorted.slice(offset, offset + PAGE_SIZE) as cat}
 						<tr class="transition-colors hover:bg-surface-container-low">
 							<td class="px-4 py-3">
-								<a href="/trends/{cat.id}" class="font-bold text-primary underline underline-offset-4 decoration-primary/30">{cat.id}</a>
+								<a href="/trends/{cat.id}" class="font-bold text-primary hover:underline underline-offset-4 decoration-primary/30">{cat.id}</a>
 							</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center gap-2">

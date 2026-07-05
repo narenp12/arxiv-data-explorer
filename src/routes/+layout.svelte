@@ -17,9 +17,10 @@
 		{ href: "/", label: "Home", mobile: true, icon: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />' },
 		{ href: "/papers", label: "Papers", mobile: true, icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />' },
 		{ href: "/authors", label: "Authors", mobile: true, icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />' },
-		{ href: "/categories", label: "Categories", mobile: true, icon: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />' },
+		// mobile: false — the 375px bottom bar fits 5 links + theme toggle; more overflows unreachably
+		{ href: "/categories", label: "Categories", mobile: false, icon: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />' },
 		{ href: "/trends", label: "Trends", mobile: true, icon: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />' },
-		{ href: "/takeoffs", label: "Takeoffs", mobile: true, icon: '<line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />' },
+		{ href: "/takeoffs", label: "Takeoffs", mobile: false, icon: '<line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" />' },
 		{ href: "/saved", label: "Saved", mobile: true, icon: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />' },
 		{ href: "/about", label: "About", mobile: false, icon: '<circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />' },
 	];

@@ -72,9 +72,9 @@
 		<h1 class="font-display max-w-4xl text-[clamp(2.5rem,5vw,4rem)] leading-[1.04] font-bold tracking-tight text-on-surface">
 			The shape of <span class="text-primary italic">science</span>,<br />one paper at a time.
 		</h1>
-		<p class="mt-6 max-w-2xl font-mono text-sm leading-relaxed text-on-surface-variant">
-			Search millions of arXiv papers through a live optical terminal. Explore networks
-			that connect authors, categories, and three decades of research.
+		<p class="mt-6 max-w-2xl font-body text-sm leading-relaxed text-on-surface-variant">
+			Search three million arXiv papers, trace co-authorship networks, and watch
+			research fields rise and fall across three decades of metadata.
 		</p>
 		<div class="mt-8 flex flex-wrap items-center gap-4">
 			<a

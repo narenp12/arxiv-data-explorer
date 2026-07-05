@@ -6,7 +6,10 @@
 	<title>{$page.status} — arXiv Explorer</title>
 </svelte:head>
 
-<div class="dot-matrix flex min-h-[70vh] items-center justify-center px-4">
+<div
+	class="dot-matrix flex min-h-[70vh] items-center justify-center px-4"
+	style="mask-image: radial-gradient(120% 120% at 20% 0%, black 40%, transparent 85%); -webkit-mask-image: radial-gradient(120% 120% at 20% 0%, black 40%, transparent 85%);"
+>
 	<div class="max-w-md border-l-4 border-warning-red bg-surface pl-8">
 		<p class="label-caps mb-3">Signal lost · {$page.status}</p>
 		<h1 class="font-display text-[clamp(2.5rem,6vw,4rem)] leading-none font-bold tracking-tight text-on-surface">
