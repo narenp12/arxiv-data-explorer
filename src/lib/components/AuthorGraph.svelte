@@ -18,10 +18,17 @@
 	let error = $state<string | null>(null);
 	let activeTooltip = $state<{ node: { label: string; weight: number; degree: number }; x: number; y: number } | null>(null);
 	let selectedNode = $state<{ id: string; label: string; weight: number } | null>(null);
+	let searchQuery = $state("");
+
+	let matchCount = $derived(
+		searchQuery.trim()
+			? graphNodes.filter((n: any) => n.label.toLowerCase().includes(searchQuery.trim().toLowerCase())).length
+			: graphNodes.length
+	);
 
 	let svgRoot: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-	let graphEdges: any[] = [];
-	let graphNodes: any[] = [];
+	let graphEdges: any[] = $state([]);
+	let graphNodes: any[] = $state([]);
 	let graphMaxW = 0;
 
 	let coauthorList = $derived.by(() => {
@@ -63,34 +70,41 @@
 	}
 
 	$effect(() => {
+		const q = searchQuery.trim().toLowerCase();
 		const sel = selectedNode;
 		if (!svgRoot || !graphEdges.length) return;
 		const root = svgRoot;
-		if (!sel) {
+		if (q) {
+			root.selectAll<any, any>("circle")
+				.attr("fill-opacity", (d: any) =>
+					d.label.toLowerCase().includes(q) ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.1
+				);
+			root.selectAll<any, any>("line").attr("stroke-opacity", 0.04);
+		} else if (sel) {
+			root.selectAll<any, any>("circle")
+				.attr("fill-opacity", (d: any) => {
+					if (d.id === sel.id) return nodeOpacity(d.weight);
+					const connected = graphEdges.some(
+						(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
+							((e.source as any).id === sel.id || (e.target as any).id === sel.id)
+					);
+					return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
+				})
+				.attr("stroke", (d: any) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
+				.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8);
+			root.selectAll<any, any>("line")
+				.attr("stroke-opacity", (e: any) => {
+					const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
+					return touches ? 0.5 : 0.04;
+				});
+		} else {
 			root.selectAll<any, any>("circle")
 				.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
 				.attr("stroke", "var(--surface-container)")
 				.attr("stroke-width", 0.8);
 			root.selectAll<any, any>("line")
 				.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
-			return;
 		}
-		root.selectAll<any, any>("circle")
-			.attr("fill-opacity", (d: any) => {
-				if (d.id === sel.id) return nodeOpacity(d.weight);
-				const connected = graphEdges.some(
-					(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
-						((e.source as any).id === sel.id || (e.target as any).id === sel.id)
-				);
-				return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
-			})
-			.attr("stroke", (d: any) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
-			.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8);
-		root.selectAll<any, any>("line")
-			.attr("stroke-opacity", (e: any) => {
-				const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
-				return touches ? 0.5 : 0.04;
-			});
 	});
 
 	onMount(() => {
@@ -168,10 +182,35 @@
 			.on("mouseleave", () => {
 				activeTooltip = null;
 				if (!prefersReducedMotion) {
-					root.selectAll<SVGCircleElement, any>("circle")
-						.attr("fill-opacity", (d: any) => nodeOpacity(d));
-					root.selectAll<any, any>("line")
-						.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+					const q = searchQuery.trim().toLowerCase();
+					const sel = selectedNode;
+					if (q) {
+						root.selectAll<SVGCircleElement, any>("circle")
+							.attr("fill-opacity", (d: any) =>
+								d.label.toLowerCase().includes(q) ? nodeOpacity(d) : nodeOpacity(d) * 0.1
+							);
+						root.selectAll<any, any>("line").attr("stroke-opacity", 0.04);
+					} else if (sel) {
+						root.selectAll<SVGCircleElement, any>("circle")
+							.attr("fill-opacity", (d: any) => {
+								if (d.id === sel.id) return nodeOpacity(d);
+								const connected = edges.some(
+									(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
+										((e.source as any).id === sel.id || (e.target as any).id === sel.id)
+								);
+								return connected ? nodeOpacity(d) : nodeOpacity(d) * 0.15;
+							});
+						root.selectAll<any, any>("line")
+							.attr("stroke-opacity", (e: any) => {
+								const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
+								return touches ? 0.5 : 0.04;
+							});
+					} else {
+						root.selectAll<SVGCircleElement, any>("circle")
+							.attr("fill-opacity", (d: any) => nodeOpacity(d));
+						root.selectAll<any, any>("line")
+							.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+					}
 				}
 			});
 
@@ -217,6 +256,17 @@
 {:else if error}
 	<div class="flex h-[450px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
 {:else if data}
+	<div class="mb-3 flex items-center gap-3">
+		<input
+			type="search"
+			bind:value={searchQuery}
+			placeholder="Find an author…"
+			class="flex-1 border border-outline/20 bg-surface-container px-3 py-1.5 font-mono text-xs text-on-surface transition-colors placeholder:text-outline focus:border-primary focus:outline-none"
+		/>
+		{#if searchQuery.trim()}
+			<span class="font-mono text-xs text-on-surface-variant">{matchCount}/{graphNodes.length} matches</span>
+		{/if}
+	</div>
 	<div bind:this={containerEl} class="relative overflow-hidden border border-outline/20 bg-surface-container">
 		<svg bind:this={svgEl} class="h-[450px] w-full" role="img" aria-label="Co-authorship network graph — click a node to select it"></svg>
 		{#if activeTooltip}
