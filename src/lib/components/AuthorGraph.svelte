@@ -81,7 +81,7 @@
 				.attr("fill-opacity", (d: any) =>
 					d.label.toLowerCase().includes(q) ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.1
 				);
-			root.selectAll<any, any>("line").attr("stroke-opacity", 0.04);
+			root.selectAll<any, any>("path").attr("stroke-opacity", 0.04);
 		} else if (sel) {
 			const motionOk = !matchMedia("(prefers-reduced-motion: reduce)").matches;
 			root.selectAll<any, any>("circle")
@@ -115,7 +115,7 @@
 					.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
 					.text((d: any) => d.label);
 			}
-			root.selectAll<any, any>("line")
+			root.selectAll<any, any>("path")
 				.attr("stroke-opacity", (e: any) => {
 					const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
 					return touches ? 0.5 : 0.04;
@@ -126,7 +126,7 @@
 				.attr("stroke", "var(--surface-container)")
 				.attr("stroke-width", 0.8)
 				.attr("style", "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease");
-			root.selectAll<any, any>("line")
+			root.selectAll<any, any>("path")
 				.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
 			root.selectAll<SVGTextElement, any>("text.node-ego-label").remove();
 		}
@@ -159,13 +159,21 @@
 		graphEdges = edges;
 		graphNodes = nodes;
 		graphMaxW = Math.max(...graph.nodes.map((n) => n.weight));
-		svgRoot.selectAll("line").data(edges).join("line")
+		function edgePath(d: any): string {
+			const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+			const mx = (sx + tx) / 2, my = (sy + ty) / 2;
+			const dx = tx - sx, dy = ty - sy, len = Math.hypot(dx, dy) || 1;
+			const offset = 4 + Math.log(d.weight) * 2;
+			const cx = mx + (-dy / len) * offset, cy = my + (dx / len) * offset;
+			return `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`;
+		}
+		svgRoot.selectAll("path").data(edges).join("path")
+			.attr("d", edgePath)
+			.attr("fill", "none")
 			.attr("stroke", "var(--outline)")
 			.attr("stroke-width", (d: any) => Math.max(0.2, Math.log((d as AuthEdge).weight) / 4))
 			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
-			.attr("style", "transition: stroke-opacity 150ms ease")
-			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
-			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
+			.attr("style", "transition: stroke-opacity 150ms ease");
 		const root = svgRoot;
 		const maxW = graphMaxW;
 		const nodeOpacity = (d: { weight: number }) => 0.35 + (d.weight / maxW) * 0.45;
@@ -184,6 +192,7 @@
 				selectedNode = d;
 			})
 			.on("mouseenter", (event: MouseEvent, d: any) => {
+				if ("ontouchstart" in window) return;
 				const rect = (event.currentTarget as SVGSVGElement).closest("svg")!.getBoundingClientRect();
 				const degree = edges.filter(
 					(e: any) => (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id
@@ -199,7 +208,7 @@
 							);
 							return connected ? nodeOpacity(n) : nodeOpacity(n) * 0.15;
 						});
-					root.selectAll<any, any>("line")
+					root.selectAll<any, any>("path")
 						.attr("stroke-opacity", (e: any) => {
 							const touches = (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id;
 							return touches ? 0.5 : 0.04;
@@ -216,7 +225,7 @@
 							.attr("fill-opacity", (d: any) =>
 								d.label.toLowerCase().includes(q) ? nodeOpacity(d) : nodeOpacity(d) * 0.1
 							);
-						root.selectAll<any, any>("line").attr("stroke-opacity", 0.04);
+						root.selectAll<any, any>("path").attr("stroke-opacity", 0.04);
 					} else if (sel) {
 						root.selectAll<SVGCircleElement, any>("circle")
 							.attr("fill-opacity", (d: any) => {
@@ -227,7 +236,7 @@
 								);
 								return connected ? nodeOpacity(d) : nodeOpacity(d) * 0.15;
 							});
-						root.selectAll<any, any>("line")
+						root.selectAll<any, any>("path")
 							.attr("stroke-opacity", (e: any) => {
 								const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
 								return touches ? 0.5 : 0.04;
@@ -235,7 +244,7 @@
 					} else {
 						root.selectAll<SVGCircleElement, any>("circle")
 							.attr("fill-opacity", (d: any) => nodeOpacity(d));
-						root.selectAll<any, any>("line")
+						root.selectAll<any, any>("path")
 							.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
 					}
 				}
