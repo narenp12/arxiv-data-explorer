@@ -70,6 +70,8 @@ const searchCache = new Map<string, { results: PaperResult[]; total: number }>()
 const detailCache = new Map<string, PaperDetail | null>();
 const inFlight = new Map<string, Promise<Response>>();
 
+export function clearSearchCache() { searchCache.clear(); detailCache.clear(); inFlight.clear(); lastRequest = 0; requestQueue = Promise.resolve(); }
+
 function getCached<K, V>(cache: Map<K, V>, key: K): V | undefined {
 	const val = cache.get(key);
 	if (val !== undefined) {
@@ -104,8 +106,8 @@ async function rateLimitedFetchOnce(url: string): Promise<Response> {
 	const promise = fetch(url);
 	inFlight.set(url, promise);
 	promise.finally(() => {
-		inFlight.delete(url);
 		resolveNext!();
+		queueMicrotask(() => inFlight.delete(url));
 	});
 	return promise;
 }

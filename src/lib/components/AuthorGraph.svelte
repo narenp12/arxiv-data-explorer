@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { base } from "$app/paths";
-	import { goto } from "$app/navigation";
+
 	import * as d3 from "d3";
 	import { assignClusters, CLUSTER_COLORS } from "$lib/utils/graph-clusters";
 
@@ -175,13 +175,12 @@
 			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
 			.attr("style", "transition: stroke-opacity 150ms ease");
 		const root = svgRoot;
-		const maxW = graphMaxW;
-		const nodeOpacity = (d: { weight: number }) => 0.35 + (d.weight / maxW) * 0.45;
+
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
 		const circles = root.selectAll("circle").data(nodes).join("circle")
 			.attr("r", radius)
 			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
-			.attr("fill-opacity", (d: any) => nodeOpacity(d))
+			.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
 			.attr("stroke", "var(--surface-container)")
 			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
@@ -201,12 +200,12 @@
 				if (!prefersReducedMotion) {
 					root.selectAll<SVGCircleElement, any>("circle")
 						.attr("fill-opacity", (n: any) => {
-							if (n.id === d.id) return nodeOpacity(n);
+							if (n.id === d.id) return nodeOpacity(n.weight);
 							const connected = edges.some(
 								(e: any) => ((e.source as DispNode).id === n.id || (e.target as DispNode).id === n.id) &&
 									((e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id)
 							);
-							return connected ? nodeOpacity(n) : nodeOpacity(n) * 0.15;
+							return connected ? nodeOpacity(n.weight) : nodeOpacity(n.weight) * 0.15;
 						});
 					root.selectAll<any, any>("path")
 						.attr("stroke-opacity", (e: any) => {
@@ -223,18 +222,18 @@
 					if (q) {
 						root.selectAll<SVGCircleElement, any>("circle")
 							.attr("fill-opacity", (d: any) =>
-								d.label.toLowerCase().includes(q) ? nodeOpacity(d) : nodeOpacity(d) * 0.1
+								d.label.toLowerCase().includes(q) ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.1
 							);
 						root.selectAll<any, any>("path").attr("stroke-opacity", 0.04);
 					} else if (sel) {
 						root.selectAll<SVGCircleElement, any>("circle")
 							.attr("fill-opacity", (d: any) => {
-								if (d.id === sel.id) return nodeOpacity(d);
+								if (d.id === sel.id) return nodeOpacity(d.weight);
 								const connected = edges.some(
 									(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
 										((e.source as any).id === sel.id || (e.target as any).id === sel.id)
 								);
-								return connected ? nodeOpacity(d) : nodeOpacity(d) * 0.15;
+								return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
 							});
 						root.selectAll<any, any>("path")
 							.attr("stroke-opacity", (e: any) => {
@@ -243,7 +242,7 @@
 							});
 					} else {
 						root.selectAll<SVGCircleElement, any>("circle")
-							.attr("fill-opacity", (d: any) => nodeOpacity(d));
+							.attr("fill-opacity", (d: any) => nodeOpacity(d.weight));
 						root.selectAll<any, any>("path")
 							.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
 					}
@@ -357,6 +356,9 @@
 				<div class="mt-3 font-mono text-xs text-on-surface-variant">
 					No co-authorship data available for this author in the top-80 network.
 				</div>
+			{/if}
+		</div>
+	{/if}
 {/if}
 
 <style>
@@ -366,6 +368,3 @@
 		100% { stroke-width: 2.5; stroke-opacity: 1; }
 	}
 </style>
-		</div>
-	{/if}
-{/if}

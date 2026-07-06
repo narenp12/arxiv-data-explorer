@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList } from "./db.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache } from "./db.js";
+
+vi.mock("../../../static/wasm/arxcheck/arxcheck.js", () => ({
+	default: async () => {},
+	validate_paper_result_json: () => [],
+	validate_paper_detail_json: () => [],
+	validate_profile_json: () => [],
+}));
 
 describe("getProp", () => {
 	it("returns the value for an existing key", () => {
@@ -76,6 +83,7 @@ describe("searchPapers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		globalThis.fetch = mockFetch;
+		clearSearchCache();
 	});
 
 	afterEach(() => {
@@ -179,6 +187,7 @@ describe("getPaperDetail", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		globalThis.fetch = mockFetch;
+		clearSearchCache();
 	});
 
 	afterEach(() => {
