@@ -4,6 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
+		"prebuild": "cargo run --manifest-path crates/arxcheck/Cargo.toml -- static/data",
 		"dev": "vite dev",
 		"build": "vite build && node scripts/postbuild.mjs",
 		"preview": "vite preview",

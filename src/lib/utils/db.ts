@@ -2,8 +2,34 @@
 // Functions in production, Vite dev-server proxy locally): the arXiv export
 // API sends no CORS headers at all, and Semantic Scholar error responses
 // (429s) lack them, which browsers surface as an opaque "Failed to fetch".
+
+// Dev-mode validation: arxcheck WASM contract checker (optional)
+type WasmAPI = { default: () => Promise<void>; validate_paper_result_json: (json: string) => string[]; validate_paper_detail_json: (json: string) => string[]; validate_profile_json: (json: string) => string[] };
+
+let checkerWasm: WasmAPI | null = null;
+
+async function ensureChecker(): Promise<WasmAPI | null> {
+  if (checkerWasm) return checkerWasm;
+  try {
+    const m = await import("../../../static/wasm/arxcheck/arxcheck.js") as WasmAPI;
+    await m.default();
+    checkerWasm = m;
+    return m;
+  } catch { return null; }
+}
+
 const API_BASE = "/api/s2/graph/v1";
 const ARXIV_API_BASE = "/api/arxiv";
+
+function sanitiseYearRange(v: string): string {
+	return /^\d{4}(-\d{4})?$/.test(v) ? v : "";
+}
+function sanitiseFieldOfStudy(v: string): string {
+	return /^[a-z-]+(,[a-z-]+)*$/i.test(v) ? v : "";
+}
+function sanitiseMinCites(v: string): string {
+	return /^\d{1,6}$/.test(v) ? v : "";
+}
 
 export interface PaperResult {
 	id: string;
@@ -40,8 +66,19 @@ let requestQueue: Promise<void> = Promise.resolve();
 const CACHE_LIMIT = 100;
 const searchCache = new Map<string, { results: PaperResult[]; total: number }>();
 const detailCache = new Map<string, PaperDetail | null>();
+const inFlight = new Map<string, Promise<Response>>();
+
+function getCached<K, V>(cache: Map<K, V>, key: K): V | undefined {
+	const val = cache.get(key);
+	if (val !== undefined) {
+		cache.delete(key);
+		cache.set(key, val);
+	}
+	return val;
+}
 
 function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
+	cache.delete(key);
 	cache.set(key, value);
 	if (cache.size > CACHE_LIMIT) {
 		const oldestKey = cache.keys().next().value as K;
@@ -54,13 +91,18 @@ async function rateLimitedFetchOnce(url: string): Promise<Response> {
 	let resolveNext: () => void;
 	requestQueue = new Promise((r) => { resolveNext = r; });
 	await prev;
+
+	const inflight = inFlight.get(url);
+	if (inflight) { resolveNext!(); return inflight; }
+
 	const now = Date.now();
 	const wait = Math.max(0, RATE_LIMIT_MS - (now - lastRequest));
 	if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 	lastRequest = Date.now();
-	const res = fetch(url);
-	res.finally(() => resolveNext!());
-	return res;
+	const promise = fetch(url);
+	inFlight.set(url, promise);
+	promise.finally(() => resolveNext!());
+	return promise;
 }
 
 async function rateLimitedFetch(url: string): Promise<Response> {
@@ -68,6 +110,7 @@ async function rateLimitedFetch(url: string): Promise<Response> {
 	let res = await rateLimitedFetchOnce(url);
 	for (const fallbackDelay of retryDelaysMs) {
 		if (res.status !== 429) return res;
+		inFlight.delete(url);
 		const retryAfter = res.headers.get("Retry-After");
 		const retrySeconds = retryAfter ? parseFloat(retryAfter) : NaN;
 		const delayMs = Number.isFinite(retrySeconds) ? retrySeconds * 1000 : fallbackDelay;
@@ -101,9 +144,12 @@ function buildSearchUrl(
 	options?: { yearRange?: string; fieldOfStudy?: string; minCites?: string },
 ): string {
 	let url = `${API_BASE}/paper/search?query=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}&fields=${SEARCH_FIELDS}`;
-	if (options?.yearRange) url += `&year=${encodeURIComponent(options.yearRange)}`;
-	if (options?.fieldOfStudy) url += `&fieldsOfStudy=${encodeURIComponent(options.fieldOfStudy)}`;
-	if (options?.minCites) url += `&minCitationCount=${encodeURIComponent(options.minCites)}`;
+	const yr = options?.yearRange ? sanitiseYearRange(options.yearRange) : "";
+	const fo = options?.fieldOfStudy ? sanitiseFieldOfStudy(options.fieldOfStudy) : "";
+	const mc = options?.minCites ? sanitiseMinCites(options.minCites) : "";
+	if (yr) url += `&year=${encodeURIComponent(yr)}`;
+	if (fo) url += `&fieldsOfStudy=${encodeURIComponent(fo)}`;
+	if (mc) url += `&minCitationCount=${encodeURIComponent(mc)}`;
 	return url;
 }
 
@@ -172,7 +218,7 @@ export async function searchPapers(
 	const yearRange = options?.yearRange;
 
 	const cacheKey = JSON.stringify({ kind: "s2", q, limit, offset, yearRange: yearRange ?? null, fieldOfStudy: options?.fieldOfStudy ?? null, minCites: options?.minCites ?? null });
-	const cached = searchCache.get(cacheKey);
+	const cached = getCached(searchCache, cacheKey);
 	if (cached) return cached;
 
 	const url = buildSearchUrl(q, limit, offset, { yearRange, fieldOfStudy: options?.fieldOfStudy, minCites: options?.minCites });
@@ -182,6 +228,14 @@ export async function searchPapers(
 	const data = await res.json();
 	const results = parseSearchResponse(data);
 	const total = getProp<number>(data, "total", 0);
+
+  if (import.meta.env.DEV) {
+    const wasm = await ensureChecker();
+    if (wasm) {
+      const errs = wasm.validate_paper_result_json(JSON.stringify({results}));
+      if (errs.length) console.warn("[arxcheck] PaperResult violations:", errs);
+    }
+  }
 
 	const result = { results, total };
 	setCached(searchCache, cacheKey, result);
@@ -196,7 +250,7 @@ export async function searchArxivCategory(
 	const offset = opts?.offset ?? 0;
 
 	const cacheKey = JSON.stringify({ kind: "arxiv", cat, limit, offset });
-	const cached = searchCache.get(cacheKey);
+	const cached = getCached(searchCache, cacheKey);
 	if (cached) return cached;
 
 	const url = `${ARXIV_API_BASE}?search_query=${encodeURIComponent(`cat:${cat}`)}&start=${offset}&max_results=${limit}&sortBy=submittedDate&sortOrder=descending`;
@@ -218,7 +272,8 @@ export async function searchArxivCategory(
 export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 	const cleanId = id.replace(/v\d+$/, "");
 
-	if (detailCache.has(cleanId)) return detailCache.get(cleanId)!;
+	const cachedDetail = getCached(detailCache, cleanId);
+	if (cachedDetail !== undefined) return cachedDetail;
 
 	const res = await rateLimitedFetch(
 		`${API_BASE}/paper/arXiv:${encodeURIComponent(cleanId)}?fields=${DETAIL_FIELDS}`,
@@ -246,6 +301,14 @@ export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 		s2Url: `https://www.semanticscholar.org/paper/${getProp(data, "paperId", "")}`,
 		citationCount: getProp(data, "citationCount", 0),
 	};
+
+  if (import.meta.env.DEV) {
+    const wasm = await ensureChecker();
+    if (wasm) {
+      const errs = wasm.validate_paper_detail_json(JSON.stringify(detail));
+      if (errs.length) console.warn("[arxcheck] PaperDetail violations:", errs);
+    }
+  }
 
 	setCached(detailCache, cleanId, detail);
 	return detail;
