@@ -1,18 +1,26 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { loadAuthorSearch, searchAuthors, getStats } from "./wasm-search";
+  import { onMount, onDestroy } from "svelte";
+  import { loadAuthorSearch, searchAuthors, getStats, getInitError } from "./wasm-search";
 
   let query = $state("");
   let results = $state<{ name: string; weight: number; coauthors: number; rank: number | null }[]>([]);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let stats = $state({ totalAuthors: 0, withRankings: 0 });
   let debounceTimer: ReturnType<typeof setTimeout>;
 
   onMount(async () => {
-    await loadAuthorSearch();
-    stats = getStats();
-    loading = false;
+    try {
+      await loadAuthorSearch();
+      stats = getStats();
+    } catch {
+      error = getInitError();
+    } finally {
+      loading = false;
+    }
   });
+
+  onDestroy(() => clearTimeout(debounceTimer));
 
   function onInput(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -31,6 +39,8 @@
 <div class="author-search">
   {#if loading}
     <p class="loading">Loading author index…</p>
+  {:else if error}
+    <p class="error">Failed to load author index: {error}</p>
   {:else}
     <p class="stats">{stats.totalAuthors} authors indexed</p>
     <input
