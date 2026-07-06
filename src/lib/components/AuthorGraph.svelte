@@ -24,6 +24,21 @@
 	let graphNodes: any[] = [];
 	let graphMaxW = 0;
 
+	let coauthorList = $derived.by(() => {
+		if (!selectedNode) return [];
+		const degrees = new Map<string, number>();
+		for (const e of graphEdges) {
+			const source = e.source as any;
+			const target = e.target as any;
+			if (source.id === selectedNode.id) degrees.set(target.label ?? target.id, (degrees.get(target.label ?? target.id) ?? 0) + (e.weight ?? 1));
+			if (target.id === selectedNode.id) degrees.set(source.label ?? source.id, (degrees.get(source.label ?? source.id) ?? 0) + (e.weight ?? 1));
+		}
+		return [...degrees.entries()]
+			.map(([name, weight]) => ({ name, weight }))
+			.sort((a, b) => b.weight - a.weight)
+			.slice(0, 15);
+	});
+
 	onMount(async () => {
 		try {
 			const res = await fetch(`${base}/data/authors/top80.json`);
@@ -203,7 +218,7 @@
 	<div class="flex h-[450px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
 {:else if data}
 	<div bind:this={containerEl} class="relative overflow-hidden border border-outline/20 bg-surface-container">
-		<svg bind:this={svgEl} class="h-[450px] w-full" role="img" aria-label="Co-authorship network graph — click a node to open the author"></svg>
+		<svg bind:this={svgEl} class="h-[450px] w-full" role="img" aria-label="Co-authorship network graph — click a node to select it"></svg>
 		{#if activeTooltip}
 			<div
 				class="pointer-events-none absolute z-10 rounded border border-outline/20 bg-surface-container px-3 py-2 font-mono text-xs shadow-lg"
@@ -214,4 +229,37 @@
 			</div>
 		{/if}
 	</div>
+	{#if selectedNode}
+		<div class="mt-3 border border-outline/20 bg-surface-container p-4">
+			<div class="flex items-start justify-between">
+				<div>
+					<div class="font-mono text-lg font-bold text-primary">{selectedNode.label}</div>
+					<div class="font-mono text-xs text-on-surface-variant">{selectedNode.weight} papers · {coauthorList.length} co-author{coauthorList.length !== 1 ? "s" : ""} in this network</div>
+				</div>
+				<a
+					href="{base}/authors/{encodeURIComponent(selectedNode.id)}"
+					class="border border-outline/20 bg-surface px-3 py-1.5 font-mono text-xs font-bold text-on-surface-variant transition-colors hover:border-primary hover:text-primary"
+				>
+					View profile →
+				</a>
+			</div>
+			{#if coauthorList.length > 0}
+				<div class="mt-3 divide-y divide-outline/20 border-t border-outline/20">
+					{#each coauthorList as co}
+						<a
+							href="{base}/authors/{encodeURIComponent(co.name)}"
+							class="flex items-center justify-between px-1 py-1.5 font-mono text-xs transition-colors hover:bg-surface-container-low"
+						>
+							<span class="text-on-surface">{co.name}</span>
+							<span class="text-on-surface-variant">{co.weight} collaboration{co.weight !== 1 ? "s" : ""}</span>
+						</a>
+					{/each}
+				</div>
+			{:else}
+				<div class="mt-3 font-mono text-xs text-on-surface-variant">
+					No co-authorship data available for this author in the top-80 network.
+				</div>
+			{/if}
+		</div>
+	{/if}
 {/if}
