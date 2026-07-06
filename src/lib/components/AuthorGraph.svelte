@@ -17,6 +17,12 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let activeTooltip = $state<{ node: { label: string; weight: number; degree: number }; x: number; y: number } | null>(null);
+	let selectedNode = $state<{ id: string; label: string; weight: number } | null>(null);
+
+	let svgRoot: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
+	let graphEdges: any[] = [];
+	let graphNodes: any[] = [];
+	let graphMaxW = 0;
 
 	onMount(async () => {
 		try {
@@ -37,6 +43,49 @@
 		renderGraph($state.snapshot(data) as Top80Graph, svgEl, w, h);
 	});
 
+	function nodeOpacity(w: number) {
+		return 0.35 + (w / Math.max(graphMaxW, 1)) * 0.45;
+	}
+
+	$effect(() => {
+		const sel = selectedNode;
+		if (!svgRoot || !graphEdges.length) return;
+		const root = svgRoot;
+		if (!sel) {
+			root.selectAll<any, any>("circle")
+				.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
+				.attr("stroke", "var(--surface-container)")
+				.attr("stroke-width", 0.8);
+			root.selectAll<any, any>("line")
+				.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+			return;
+		}
+		root.selectAll<any, any>("circle")
+			.attr("fill-opacity", (d: any) => {
+				if (d.id === sel.id) return nodeOpacity(d.weight);
+				const connected = graphEdges.some(
+					(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
+						((e.source as any).id === sel.id || (e.target as any).id === sel.id)
+				);
+				return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
+			})
+			.attr("stroke", (d: any) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
+			.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8);
+		root.selectAll<any, any>("line")
+			.attr("stroke-opacity", (e: any) => {
+				const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
+				return touches ? 0.5 : 0.04;
+			});
+	});
+
+	onMount(() => {
+		function onKey(e: KeyboardEvent) {
+			if (e.key === "Escape") selectedNode = null;
+		}
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	});
+
 	function renderGraph(graph: Top80Graph, svg: SVGSVGElement, w: number, h: number) {
 		const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 		const clusters = assignClusters(graph.nodes, graph.edges);
@@ -52,14 +101,18 @@
 			.stop();
 		const ticks = Math.ceil(Math.log(sim.alphaMin()) / Math.log(1 - sim.alphaDecay()));
 		sim.tick(ticks);
-		const root = d3.select(svg).append("g");
-		root.selectAll("line").data(edges).join("line")
+		svgRoot = d3.select(svg).append("g");
+		graphEdges = edges;
+		graphNodes = nodes;
+		graphMaxW = Math.max(...graph.nodes.map((n) => n.weight));
+		svgRoot.selectAll("line").data(edges).join("line")
 			.attr("stroke", "var(--outline)")
 			.attr("stroke-width", (d: any) => Math.max(0.2, Math.log((d as AuthEdge).weight) / 4))
 			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
 			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
-		const maxW = Math.max(...graph.nodes.map((n) => n.weight));
+		const root = svgRoot;
+		const maxW = graphMaxW;
 		const nodeOpacity = (d: { weight: number }) => 0.35 + (d.weight / maxW) * 0.45;
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
 		const circles = root.selectAll("circle").data(nodes).join("circle")
@@ -70,7 +123,10 @@
 			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
-			.on("click", (_e: MouseEvent, d: any) => goto(`/authors/${encodeURIComponent(d.id)}`))
+			.on("click", (_e: MouseEvent, d: any) => {
+				if (selectedNode?.id === d.id) { selectedNode = null; return; }
+				selectedNode = d;
+			})
 			.on("mouseenter", (event: MouseEvent, d: any) => {
 				const rect = (event.currentTarget as SVGSVGElement).closest("svg")!.getBoundingClientRect();
 				const degree = edges.filter(
