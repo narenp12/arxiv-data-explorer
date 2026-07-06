@@ -81,6 +81,7 @@
 				);
 			root.selectAll<any, any>("line").attr("stroke-opacity", 0.04);
 		} else if (sel) {
+			const motionOk = !matchMedia("(prefers-reduced-motion: reduce)").matches;
 			root.selectAll<any, any>("circle")
 				.attr("fill-opacity", (d: any) => {
 					if (d.id === sel.id) return nodeOpacity(d.weight);
@@ -91,7 +92,12 @@
 					return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
 				})
 				.attr("stroke", (d: any) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
-				.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8);
+				.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8)
+				.attr("style", (d: any) =>
+					d.id === sel.id && motionOk
+						? "animation: select-pulse 0.4s ease-out 2; transition: stroke-width 150ms ease, stroke-opacity 150ms ease"
+						: "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease"
+				);
 			root.selectAll<any, any>("line")
 				.attr("stroke-opacity", (e: any) => {
 					const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
@@ -138,6 +144,7 @@
 			.attr("stroke", "var(--outline)")
 			.attr("stroke-width", (d: any) => Math.max(0.2, Math.log((d as AuthEdge).weight) / 4))
 			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
+			.attr("style", "transition: stroke-opacity 150ms ease")
 			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
 		const root = svgRoot;
@@ -151,6 +158,7 @@
 			.attr("stroke", "var(--surface-container)")
 			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
+			.attr("style", "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease")
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
 			.on("click", (_e: MouseEvent, d: any) => {
 				if (selectedNode?.id === d.id) { selectedNode = null; return; }
@@ -255,6 +263,10 @@
 	</div>
 {:else if error}
 	<div class="flex h-[450px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
+{:else if data && data.nodes.length === 0}
+	<div class="flex h-[450px] items-center justify-center font-mono text-sm text-on-surface-variant">
+		No co-authorship data available.
+	</div>
 {:else if data}
 	<div class="mb-3 flex items-center gap-3">
 		<input
@@ -278,6 +290,12 @@
 				<div class="text-on-surface-variant">{activeTooltip.node.weight} papers · {activeTooltip.node.degree} co-author{activeTooltip.node.degree !== 1 ? "s" : ""}</div>
 			</div>
 		{/if}
+	</div>
+	<div class="mt-2 flex items-center gap-3 font-mono text-[10px] text-on-surface-variant">
+		Clusters
+		{#each CLUSTER_COLORS as color}
+			<span class="inline-block h-2 w-2 rounded-full" style="background: {color}"></span>
+		{/each}
 	</div>
 	{#if selectedNode}
 		<div class="mt-3 border border-outline/20 bg-surface-container p-4">
@@ -309,7 +327,15 @@
 				<div class="mt-3 font-mono text-xs text-on-surface-variant">
 					No co-authorship data available for this author in the top-80 network.
 				</div>
-			{/if}
+{/if}
+
+<style>
+	:global(@keyframes select-pulse) {
+		0% { stroke-width: 2.5; stroke-opacity: 1; }
+		50% { stroke-width: 4; stroke-opacity: 0.6; }
+		100% { stroke-width: 2.5; stroke-opacity: 1; }
+	}
+</style>
 		</div>
 	{/if}
 {/if}
