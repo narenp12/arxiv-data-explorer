@@ -16,6 +16,7 @@
 	let data = $state<Top80Graph | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let activeTooltip = $state<{ node: { label: string; weight: number; degree: number }; x: number; y: number } | null>(null);
 
 	onMount(async () => {
 		try {
@@ -59,17 +60,49 @@
 			.attr("x1", (d: any) => d.source.x).attr("y1", (d: any) => d.source.y)
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
 		const maxW = Math.max(...graph.nodes.map((n) => n.weight));
+		const nodeOpacity = (d: { weight: number }) => 0.35 + (d.weight / maxW) * 0.45;
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
 		const circles = root.selectAll("circle").data(nodes).join("circle")
 			.attr("r", radius)
 			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
-			.attr("fill-opacity", (d: any) => 0.35 + (d.weight / maxW) * 0.45)
+			.attr("fill-opacity", (d: any) => nodeOpacity(d))
 			.attr("stroke", "var(--surface-container)")
 			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
 			.on("click", (_e: MouseEvent, d: any) => goto(`/authors/${encodeURIComponent(d.id)}`))
-			.append("title").text((d: any) => `${d.label} (${d.weight} papers)`);
+			.on("mouseenter", (event: MouseEvent, d: any) => {
+				const rect = (event.currentTarget as SVGSVGElement).closest("svg")!.getBoundingClientRect();
+				const degree = edges.filter(
+					(e: any) => (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id
+				).length;
+				activeTooltip = { node: { label: d.label, weight: d.weight, degree }, x: event.clientX - rect.left, y: event.clientY - rect.top };
+				if (!prefersReducedMotion) {
+					root.selectAll<SVGCircleElement, any>("circle")
+						.attr("fill-opacity", (n: any) => {
+							if (n.id === d.id) return nodeOpacity(n);
+							const connected = edges.some(
+								(e: any) => ((e.source as DispNode).id === n.id || (e.target as DispNode).id === n.id) &&
+									((e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id)
+							);
+							return connected ? nodeOpacity(n) : nodeOpacity(n) * 0.15;
+						});
+					root.selectAll<any, any>("line")
+						.attr("stroke-opacity", (e: any) => {
+							const touches = (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id;
+							return touches ? 0.5 : 0.04;
+						});
+				}
+			})
+			.on("mouseleave", () => {
+				activeTooltip = null;
+				if (!prefersReducedMotion) {
+					root.selectAll<SVGCircleElement, any>("circle")
+						.attr("fill-opacity", (d: any) => nodeOpacity(d));
+					root.selectAll<any, any>("line")
+						.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+				}
+			});
 
 		const dragHandler = d3.drag<SVGCircleElement, any>()
 			.on("start", (event, d) => {
@@ -113,7 +146,16 @@
 {:else if error}
 	<div class="flex h-[450px] items-center justify-center font-mono text-xs text-warning-red">{error}</div>
 {:else if data}
-	<div bind:this={containerEl} class="overflow-hidden border border-outline/20 bg-surface-container">
+	<div bind:this={containerEl} class="relative overflow-hidden border border-outline/20 bg-surface-container">
 		<svg bind:this={svgEl} class="h-[450px] w-full" role="img" aria-label="Co-authorship network graph — click a node to open the author"></svg>
+		{#if activeTooltip}
+			<div
+				class="pointer-events-none absolute z-10 rounded border border-outline/20 bg-surface-container px-3 py-2 font-mono text-xs shadow-lg"
+				style="left: {activeTooltip.x}px; top: {activeTooltip.y}px; transform: translate(8px, -50%)"
+			>
+				<div class="font-bold text-on-surface">{activeTooltip.node.label}</div>
+				<div class="text-on-surface-variant">{activeTooltip.node.weight} papers · {activeTooltip.node.degree} co-author{activeTooltip.node.degree !== 1 ? "s" : ""}</div>
+			</div>
+		{/if}
 	</div>
 {/if}
