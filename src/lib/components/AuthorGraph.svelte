@@ -30,6 +30,8 @@
 	let graphEdges: any[] = $state([]);
 	let graphNodes: any[] = $state([]);
 	let graphMaxW = 0;
+	let labelSet = new Set<string>();
+	const graphRadius = (w: number) => Math.max(2, Math.min(8, Math.sqrt(w) * 0.15));
 
 	let coauthorList = $derived.by(() => {
 		if (!selectedNode) return [];
@@ -98,6 +100,21 @@
 						? "animation: select-pulse 0.4s ease-out 2; transition: stroke-width 150ms ease, stroke-opacity 150ms ease"
 						: "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease"
 				);
+			const egoIds = new Set([sel.id]);
+			for (const e of graphEdges) {
+				if ((e.source as any).id === sel.id) egoIds.add((e.target as any).id);
+				if ((e.target as any).id === sel.id) egoIds.add((e.source as any).id);
+			}
+			const egoUnlabelled = graphNodes.filter((n: any) => egoIds.has(n.id) && !labelSet.has(n.id));
+			if (egoUnlabelled.length) {
+				root.selectAll<SVGTextElement, any>("text.node-ego-label").data(egoUnlabelled).join("text")
+					.attr("class", "node-ego-label")
+					.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - graphRadius(d.weight) - 3)
+					.attr("text-anchor", "middle")
+					.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
+					.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
+					.text((d: any) => d.label);
+			}
 			root.selectAll<any, any>("line")
 				.attr("stroke-opacity", (e: any) => {
 					const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
@@ -107,9 +124,11 @@
 			root.selectAll<any, any>("circle")
 				.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
 				.attr("stroke", "var(--surface-container)")
-				.attr("stroke-width", 0.8);
+				.attr("stroke-width", 0.8)
+				.attr("style", "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease");
 			root.selectAll<any, any>("line")
 				.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+			root.selectAll<SVGTextElement, any>("text.node-ego-label").remove();
 		}
 	});
 
@@ -243,9 +262,11 @@
 		circles.call(dragHandler);
 
 		const labelled = [...nodes].sort((a, b) => b.weight - a.weight).slice(0, 12);
+		labelSet = new Set(labelled.map((n: any) => n.id));
 		root.selectAll("text").data(labelled).join("text")
 			.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - radius(d) - 3)
 			.attr("text-anchor", "middle")
+			.attr("class", "node-label")
 			.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
 			.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
 			.text((d: any) => d.label);
