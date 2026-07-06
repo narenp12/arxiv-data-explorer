@@ -1,4 +1,6 @@
 pub mod checks;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Severity {
