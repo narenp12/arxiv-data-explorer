@@ -1,6 +1,6 @@
 use crate::data::Author;
 
-/// Score candidates: exact prefix > fuzzy; within tier, weight × co-count × rank.
+/// Score candidates: exact prefix > fuzzy; within tier, weight × (1 + co_count).
 pub fn rank_candidates(authors: &[Author], indices: &[usize], query: &str) -> Vec<usize> {
     let query_lower = query.to_ascii_lowercase();
 
