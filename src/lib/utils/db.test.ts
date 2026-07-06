@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, arxivId, authorList } from "./db.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList } from "./db.js";
 
 describe("getProp", () => {
 	it("returns the value for an existing key", () => {
@@ -143,5 +143,114 @@ describe("searchPapers", () => {
 		const calledUrl = mockFetch.mock.calls[0][0];
 		expect(calledUrl).toContain("limit=10");
 		expect(calledUrl).toContain("offset=20");
+	});
+
+	it("deduplicates in-flight requests", async () => {
+		let resolve: (v: unknown) => void;
+		mockFetch.mockReturnValue(new Promise((r) => { resolve = r; }));
+		const p1 = searchPapers("dedup");
+		const p2 = searchPapers("dedup");
+		resolve!({ ok: true, status: 200, json: async () => ({ data: [], total: 0 }) });
+		await Promise.all([p1, p2]);
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("re-fetches on 429 despite in-flight dedup", async () => {
+		let call = 0;
+		mockFetch.mockImplementation(async () => {
+			call++;
+			return {
+				ok: call > 1,
+				status: call > 1 ? 200 : 429,
+				headers: new Map(),
+				json: async () => ({ data: [], total: 0 }),
+			};
+		});
+		const result = await searchPapers("retry-429");
+		expect(result).toEqual({ results: [], total: 0 });
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("getPaperDetail", () => {
+	const mockFetch = vi.fn();
+	const originalFetch = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = mockFetch;
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	it("returns null for 404", async () => {
+		mockFetch.mockResolvedValue({ ok: false, status: 404 });
+		const result = await getPaperDetail("2301.00123");
+		expect(result).toBeNull();
+	});
+
+	it("parses a paper detail response", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: async () => ({
+				paperId: "abc",
+				title: "Detail Test",
+				authors: [{ name: "Alice" }],
+				abstract: "An abstract",
+				venue: "Test Venue",
+				year: 2023,
+				citationCount: 5,
+				externalIds: { DOI: "10.1234/test" },
+				publicationDate: "2023-06",
+			}),
+		});
+		const result = await getPaperDetail("2301.99999");
+		expect(result).not.toBeNull();
+		expect(result!.title).toBe("Detail Test");
+		expect(result!.doi).toBe("10.1234/test");
+		expect(result!.citationCount).toBe(5);
+	});
+});
+
+describe("searchArxivCategory", () => {
+	const mockFetch = vi.fn();
+	const originalFetch = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = mockFetch;
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	it("parses arXiv XML response", async () => {
+		const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+  xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <opensearch:totalResults>42</opensearch:totalResults>
+  <entry>
+    <id>http://arxiv.org/abs/2301.00123</id>
+    <title>  An arXiv Paper  </title>
+    <author><name>Alice</name></author>
+    <author><name>Bob</name></author>
+    <published>2023-01-01T00:00:00Z</published>
+  </entry>
+</feed>`;
+		mockFetch.mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: async () => xml,
+		});
+		const result = await searchArxivCategory("cs.LG", { limit: 10 });
+		expect(result.total).toBe(42);
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0].title).toBe("An arXiv Paper");
+		expect(result.results[0].authors).toBe("Alice, Bob");
+		expect(result.results[0].isArxiv).toBe(true);
 	});
 });

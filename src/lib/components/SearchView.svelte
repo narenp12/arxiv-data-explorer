@@ -2,7 +2,7 @@
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
-	import { searchPapers, searchArxivCategory, type PaperResult } from "$lib/utils/db";
+	import { searchPapers, searchArxivCategory, sanitiseYearRange, sanitiseFieldOfStudy, sanitiseMinCites, type PaperResult } from "$lib/utils/db";
 	import PaperCard from "./PaperCard.svelte";
 	import SearchFilters from "./SearchFilters.svelte";
 
@@ -23,9 +23,9 @@
 	onMount(() => {
 		const urlQuery = $page.url.searchParams.get("q");
 		const urlPage = Math.max(1, parseInt($page.url.searchParams.get("page") || "1", 10));
-		yearRange = $page.url.searchParams.get("yr") || "";
-		fieldOfStudy = $page.url.searchParams.get("fo") || "";
-		minCites = $page.url.searchParams.get("mc") || "";
+		yearRange = sanitiseYearRange($page.url.searchParams.get("yr") || "");
+		fieldOfStudy = sanitiseFieldOfStudy($page.url.searchParams.get("fo") || "");
+		minCites = sanitiseMinCites($page.url.searchParams.get("mc") || "");
 		if (urlQuery) {
 			query = urlQuery;
 			if (urlQuery.trim().length >= 2) {
@@ -54,6 +54,7 @@
 		minCites = filters.minCites;
 		offset = 0;
 		syncUrl(query, 0);
+		if (query.trim().length >= 2) doSearch();
 	}
 
 	let debounceTimer: ReturnType<typeof setTimeout>;

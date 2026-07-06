@@ -33,7 +33,7 @@
 		<p class="label-caps mb-3">Top 50k · co-authorship graph</p>
 		<h1 class="font-display text-[clamp(2rem,4vw,3rem)] font-bold tracking-tight text-on-surface border-b-2 border-primary pb-3">Authors</h1>
 		<p class="mt-2 max-w-xl font-mono text-sm text-on-surface-variant">
-			{loading ? "Loading signal…" : `${authors.length.toLocaleString()} most prolific authors in the corpus`}
+			{loading ? "Loading…" : `${authors.length.toLocaleString()} most prolific authors in the corpus`}
 		</p>
 	</header>
 

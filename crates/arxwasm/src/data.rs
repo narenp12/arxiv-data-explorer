@@ -16,7 +16,7 @@ pub struct AuthorStore {
 #[derive(Deserialize)]
 struct RawShardEntry {
     w: u32,
-    co: Vec<[String; 2]>,
+    co: Vec<(String, serde_json::Value)>,
 }
 
 type RawShard = std::collections::HashMap<String, RawShardEntry>;
@@ -30,7 +30,7 @@ impl AuthorStore {
             store.authors.push(Author {
                 name: name.clone(),
                 weight: entry.w,
-                coauthors: entry.co.iter().map(|c| c[0].clone()).collect(),
+                coauthors: entry.co.iter().map(|c| c.0.clone()).collect(),
                 rank: None,
             });
         }

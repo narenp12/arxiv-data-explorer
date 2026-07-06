@@ -6,28 +6,30 @@
 // Dev-mode validation: arxcheck WASM contract checker (optional)
 type WasmAPI = { default: () => Promise<void>; validate_paper_result_json: (json: string) => string[]; validate_paper_detail_json: (json: string) => string[]; validate_profile_json: (json: string) => string[] };
 
-let checkerWasm: WasmAPI | null = null;
+let _check: WasmAPI | null = null;
+let _checkReady = false;
 
-async function ensureChecker(): Promise<WasmAPI | null> {
-  if (checkerWasm) return checkerWasm;
-  try {
-    const m = await import("../../../static/wasm/arxcheck/arxcheck.js") as WasmAPI;
-    await m.default();
-    checkerWasm = m;
-    return m;
-  } catch { return null; }
+function ensureChecker(): WasmAPI | null {
+  if (!_checkReady) return null;
+  return _check;
+}
+
+if (import.meta.env.DEV) {
+  import("../../../static/wasm/arxcheck/arxcheck.js")
+    .then((m: WasmAPI) => m.default().then(() => { _check = m; _checkReady = true; }))
+    .catch(() => {});
 }
 
 const API_BASE = "/api/s2/graph/v1";
 const ARXIV_API_BASE = "/api/arxiv";
 
-function sanitiseYearRange(v: string): string {
+export function sanitiseYearRange(v: string): string {
 	return /^\d{4}(-\d{4})?$/.test(v) ? v : "";
 }
-function sanitiseFieldOfStudy(v: string): string {
+export function sanitiseFieldOfStudy(v: string): string {
 	return /^[a-z-]+(,[a-z-]+)*$/i.test(v) ? v : "";
 }
-function sanitiseMinCites(v: string): string {
+export function sanitiseMinCites(v: string): string {
 	return /^\d{1,6}$/.test(v) ? v : "";
 }
 
@@ -101,7 +103,10 @@ async function rateLimitedFetchOnce(url: string): Promise<Response> {
 	lastRequest = Date.now();
 	const promise = fetch(url);
 	inFlight.set(url, promise);
-	promise.finally(() => resolveNext!());
+	promise.finally(() => {
+		inFlight.delete(url);
+		resolveNext!();
+	});
 	return promise;
 }
 
@@ -110,7 +115,6 @@ async function rateLimitedFetch(url: string): Promise<Response> {
 	let res = await rateLimitedFetchOnce(url);
 	for (const fallbackDelay of retryDelaysMs) {
 		if (res.status !== 429) return res;
-		inFlight.delete(url);
 		const retryAfter = res.headers.get("Retry-After");
 		const retrySeconds = retryAfter ? parseFloat(retryAfter) : NaN;
 		const delayMs = Number.isFinite(retrySeconds) ? retrySeconds * 1000 : fallbackDelay;
@@ -230,7 +234,7 @@ export async function searchPapers(
 	const total = getProp<number>(data, "total", 0);
 
   if (import.meta.env.DEV) {
-    const wasm = await ensureChecker();
+    const wasm = ensureChecker();
     if (wasm) {
       const errs = wasm.validate_paper_result_json(JSON.stringify({results}));
       if (errs.length) console.warn("[arxcheck] PaperResult violations:", errs);
@@ -303,7 +307,7 @@ export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
 	};
 
   if (import.meta.env.DEV) {
-    const wasm = await ensureChecker();
+    const wasm = ensureChecker();
     if (wasm) {
       const errs = wasm.validate_paper_detail_json(JSON.stringify(detail));
       if (errs.length) console.warn("[arxcheck] PaperDetail violations:", errs);

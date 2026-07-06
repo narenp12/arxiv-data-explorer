@@ -61,13 +61,13 @@
 		<p class="mt-2 max-w-xl font-mono text-sm text-on-surface-variant">
 			{data
 				? `${data.domains.length} domains · ${data.total_categories} categories · ${data.total_papers.toLocaleString()} papers`
-				: "Loading signal…"}
+				: "Loading…"}
 		</p>
 	</header>
 
 	{#if loading}
 		<div class="label-caps flex items-center justify-center gap-2 py-16">
-			Loading signal…
+Loading…
 		</div>
 	{:else if data}
 		<div class="space-y-px">
@@ -108,6 +108,11 @@
 					{/if}
 				</div>
 			{/each}
+		</div>
+	{:else}
+		<div class="flex flex-col items-center justify-center gap-3 py-16">
+			<p class="font-mono text-sm text-warning-red">Failed to load category data.</p>
+			<p class="font-mono text-xs text-outline">The taxonomy file may be missing or corrupt.</p>
 		</div>
 	{/if}
 </div>

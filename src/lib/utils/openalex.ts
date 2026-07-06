@@ -5,6 +5,7 @@ const API_BASE = "/api/openalex";
 const RATE_LIMIT_MS = 110;
 let lastRequest = 0;
 let requestQueue: Promise<void> = Promise.resolve();
+const inFlight = new Map<string, Promise<Response>>();
 
 async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
 	for (let attempt = 0; ; attempt++) {
@@ -12,17 +13,27 @@ async function rateLimitedFetch(url: string, retries = 2): Promise<Response> {
 		let resolveNext: () => void;
 		requestQueue = new Promise((r) => { resolveNext = r; });
 		await prev;
+
+		const inflight = inFlight.get(url);
+		if (inflight) { resolveNext!(); return inflight; }
+
 		const now = Date.now();
 		const wait = Math.max(0, RATE_LIMIT_MS - (now - lastRequest));
 		if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 		lastRequest = Date.now();
+		const promise = fetch(url);
+		inFlight.set(url, promise);
 		let res: Response;
 		try {
-			res = await fetch(url);
+			res = await promise;
 		} finally {
 			resolveNext!();
 		}
-		if (res.status !== 429 || attempt >= retries) return res;
+		if (attempt >= retries || res.status !== 429) {
+			if (inFlight.get(url) === promise) inFlight.delete(url);
+			return res;
+		}
+		if (inFlight.get(url) === promise) inFlight.delete(url);
 		const retryAfter = parseInt(res.headers.get("Retry-After") ?? "1", 10);
 		await new Promise((r) => setTimeout(r, Math.min(retryAfter * 1000, 5000)));
 	}

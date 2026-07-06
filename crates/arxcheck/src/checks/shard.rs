@@ -8,7 +8,7 @@ use serde::Deserialize;
 #[allow(dead_code)]
 struct ShardEntry {
     w: u32,
-    co: Vec<[String; 2]>,
+    co: Vec<(String, serde_json::Value)>,
 }
 
 pub struct ShardCheck;
@@ -34,7 +34,8 @@ impl Check for ShardCheck {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !fname.starts_with("shard-") || path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
             let content = match fs::read_to_string(&path) {
@@ -60,10 +61,10 @@ impl Check for ShardCheck {
                         }
                     }
                     for (name, entry) in &map {
-                        if entry.co.iter().any(|c| c.len() != 2) {
+                        if entry.co.iter().any(|c| c.0.is_empty()) {
                             violations.push(CheckViolation::error(
                                 path.display().to_string(),
-                                format!("author \"{name}\" has malformed co-author entry"),
+                                format!("author \"{name}\" has empty co-author name"),
                             ));
                         }
                     }
