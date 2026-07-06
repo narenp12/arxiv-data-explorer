@@ -37,6 +37,7 @@
 	});
 
 	function renderGraph(graph: Top80Graph, svg: SVGSVGElement, w: number, h: number) {
+		const prefersReducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 		const clusters = assignClusters(graph.nodes, graph.edges);
 		svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 		d3.select(svg).selectAll("*").remove();
@@ -59,7 +60,7 @@
 			.attr("x2", (d: any) => d.target.x).attr("y2", (d: any) => d.target.y);
 		const maxW = Math.max(...graph.nodes.map((n) => n.weight));
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
-		root.selectAll("circle").data(nodes).join("circle")
+		const circles = root.selectAll("circle").data(nodes).join("circle")
 			.attr("r", radius)
 			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
 			.attr("fill-opacity", (d: any) => 0.35 + (d.weight / maxW) * 0.45)
@@ -69,6 +70,26 @@
 			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
 			.on("click", (_e: MouseEvent, d: any) => goto(`/authors/${encodeURIComponent(d.id)}`))
 			.append("title").text((d: any) => `${d.label} (${d.weight} papers)`);
+
+		const dragHandler = d3.drag<SVGCircleElement, any>()
+			.on("start", (event, d) => {
+				if (prefersReducedMotion) return;
+				if (!event.active) sim.alphaTarget(0.3).restart();
+				d.fx = d.x;
+				d.fy = d.y;
+			})
+			.on("drag", (event, d) => {
+				if (prefersReducedMotion) return;
+				d.fx = event.x;
+				d.fy = event.y;
+			})
+			.on("end", (event, d) => {
+				if (prefersReducedMotion) return;
+				if (!event.active) sim.alphaTarget(0);
+				d.fx = null;
+				d.fy = null;
+			});
+		circles.call(dragHandler);
 
 		const labelled = [...nodes].sort((a, b) => b.weight - a.weight).slice(0, 12);
 		root.selectAll("text").data(labelled).join("text")
