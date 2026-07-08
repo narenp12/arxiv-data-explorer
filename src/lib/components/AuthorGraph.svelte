@@ -20,18 +20,18 @@
 	let selectedNode = $state<{ id: string; label: string; weight: number } | null>(null);
 	let searchQuery = $state("");
 
-	let matchCount = $derived(
-		searchQuery.trim()
-			? graphNodes.filter((n: any) => n.label.toLowerCase().includes(searchQuery.trim().toLowerCase())).length
-			: graphNodes.length
-	);
-
 	let svgRoot: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
 	let graphEdges: any[] = $state([]);
 	let graphNodes: any[] = $state([]);
 	let graphMaxW = 0;
 	let labelSet = new Set<string>();
 	const graphRadius = (w: number) => Math.max(2, Math.min(8, Math.sqrt(w) * 0.15));
+
+	let matchCount = $derived(
+		searchQuery.trim()
+			? graphNodes.filter((n: any) => n.label.toLowerCase().includes(searchQuery.trim().toLowerCase())).length
+			: graphNodes.length
+	);
 
 	let coauthorList = $derived.by(() => {
 		if (!selectedNode) return [];
@@ -177,7 +177,7 @@
 		const root = svgRoot;
 
 		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
-		const circles = root.selectAll("circle").data(nodes).join("circle")
+		const circles = root.selectAll<SVGCircleElement, any>("circle").data(nodes).join("circle")
 			.attr("r", radius)
 			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
 			.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
@@ -362,7 +362,7 @@
 {/if}
 
 <style>
-	:global(@keyframes select-pulse) {
+	@keyframes -global-select-pulse {
 		0% { stroke-width: 2.5; stroke-opacity: 1; }
 		50% { stroke-width: 4; stroke-opacity: 0.6; }
 		100% { stroke-width: 2.5; stroke-opacity: 1; }
