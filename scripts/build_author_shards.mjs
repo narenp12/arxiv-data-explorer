@@ -44,6 +44,7 @@ function main() {
 	const topIds = new Set(top80Nodes.map((n) => n.id));
 	const top80Edges = edges
 		.filter((e) => topIds.has(e.source) && topIds.has(e.target))
+		.sort((a, b) => b.weight - a.weight)
 		.slice(0, 200);
 	const top80 = { nodes: top80Nodes, edges: top80Edges };
 	const top80Path = join(OUT_DIR, "top80.json");
