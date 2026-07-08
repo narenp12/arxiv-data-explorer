@@ -27,7 +27,9 @@ export function sanitiseYearRange(v: string): string {
 	return /^\d{4}(-\d{4})?$/.test(v) ? v : "";
 }
 export function sanitiseFieldOfStudy(v: string): string {
-	return /^[a-z-]+(,[a-z-]+)*$/i.test(v) ? v : "";
+	// S2 field names can contain spaces ("Computer Science", "Materials Science"),
+	// so allow internal spaces/hyphens — not just single lowercase words.
+	return /^[a-z][a-z -]*(,[a-z][a-z -]*)*$/i.test(v) ? v : "";
 }
 export function sanitiseMinCites(v: string): string {
 	return /^\d{1,6}$/.test(v) ? v : "";
@@ -96,8 +98,12 @@ async function rateLimitedFetchOnce(url: string): Promise<Response> {
 	requestQueue = new Promise((r) => { resolveNext = r; });
 	await prev;
 
+	// Each caller gets an independent clone: a Response body can only be read
+	// once, so handing the shared in-flight Response to two racing callers would
+	// make the second .json()/.text() throw "body stream already read". The
+	// stored promise's original Response is never consumed — only cloned from.
 	const inflight = inFlight.get(url);
-	if (inflight) { resolveNext!(); return inflight; }
+	if (inflight) { resolveNext!(); return inflight.then((r) => r.clone()); }
 
 	const now = Date.now();
 	const wait = Math.max(0, RATE_LIMIT_MS - (now - lastRequest));
@@ -109,7 +115,7 @@ async function rateLimitedFetchOnce(url: string): Promise<Response> {
 		resolveNext!();
 		queueMicrotask(() => inFlight.delete(url));
 	});
-	return promise;
+	return promise.then((r) => r.clone());
 }
 
 async function rateLimitedFetch(url: string): Promise<Response> {
@@ -261,7 +267,15 @@ export async function searchArxivCategory(
 
 	const url = `${ARXIV_API_BASE}?search_query=${encodeURIComponent(`cat:${cat}`)}&start=${offset}&max_results=${limit}&sortBy=submittedDate&sortOrder=descending`;
 
-	const res = await fetch(url);
+	// rateLimitedFetch throws the S2-flavoured "SEARCH_BUSY" on persistent 429;
+	// remap it so the UI attributes the rate-limit to arXiv, not Semantic Scholar.
+	let res: Response;
+	try {
+		res = await rateLimitedFetch(url);
+	} catch (e) {
+		if (e instanceof Error && e.message === "SEARCH_BUSY") throw new Error("ARXIV_BUSY");
+		throw e;
+	}
 	if (!res.ok) throw new Error(`arXiv error: ${res.status}`);
 
 	const text = await res.text();

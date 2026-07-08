@@ -139,7 +139,7 @@
 
 	{#if error}
 		<div class="py-16 text-center font-mono text-sm text-warning-red">
-			{error === "SEARCH_BUSY" ? "Semantic Scholar is busy right now — retrying usually works in a few seconds." : error}
+			{error === "SEARCH_BUSY" ? "Semantic Scholar is busy right now — retrying usually works in a few seconds." : error === "ARXIV_BUSY" ? "arXiv is busy right now — retrying usually works in a few seconds." : error}
 			<button
 				onclick={() => doSearch()}
 				class="ml-2 text-primary underline underline-offset-4 decoration-primary/30"

@@ -14,7 +14,14 @@ const STORAGE_KEY = "reading-list";
 function load(): SavedPaper[] {
 	if (!browser) return [];
 	try {
-		return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+		const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+		if (!Array.isArray(parsed)) return [];
+		// Drop malformed entries at the boundary so every consumer (toBibtex,
+		// the saved-page templates) can rely on the required string fields.
+		return parsed.filter(
+			(p): p is SavedPaper =>
+				p && typeof p.id === "string" && typeof p.title === "string" && typeof p.authors === "string",
+		);
 	} catch {
 		return [];
 	}
@@ -45,10 +52,12 @@ class ReadingList {
 		return this.papers
 			.map((p) => {
 				const key = p.isArxiv ? `arxiv${p.id.replace(/[^a-zA-Z0-9]/g, "")}` : `s2${p.id.slice(0, 8)}`;
+				// Strip stray braces so a `}` in a title/author can't close the field early.
+				const bib = (s: string) => s.replace(/[{}]/g, "");
 				const lines = [
 					`@misc{${key},`,
-					`  title = {${p.title}},`,
-					`  author = {${p.authors.split(", ").join(" and ")}},`,
+					`  title = {${bib(p.title)}},`,
+					`  author = {${bib(p.authors).split(", ").join(" and ")}},`,
 				];
 				if (p.year) lines.push(`  year = {${p.year}},`);
 				if (p.isArxiv) {

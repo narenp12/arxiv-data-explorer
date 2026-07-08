@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache } from "./db.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy } from "./db.js";
 
 vi.mock("../../../static/wasm/arxcheck/arxcheck.js", () => ({
 	default: async () => {},
@@ -34,6 +34,26 @@ describe("getProp", () => {
 	it("preserves false boolean values", () => {
 		const obj = { active: false };
 		expect(getProp(obj, "active", true)).toBe(false);
+	});
+});
+
+describe("sanitiseFieldOfStudy", () => {
+	it("accepts single-word fields", () => {
+		expect(sanitiseFieldOfStudy("Physics")).toBe("Physics");
+	});
+
+	it("accepts multi-word fields with spaces", () => {
+		expect(sanitiseFieldOfStudy("Computer Science")).toBe("Computer Science");
+		expect(sanitiseFieldOfStudy("Materials Science")).toBe("Materials Science");
+	});
+
+	it("accepts comma-separated lists", () => {
+		expect(sanitiseFieldOfStudy("Computer Science,Physics")).toBe("Computer Science,Physics");
+	});
+
+	it("rejects values with disallowed characters", () => {
+		expect(sanitiseFieldOfStudy("Physics; DROP TABLE")).toBe("");
+		expect(sanitiseFieldOfStudy("1234")).toBe("");
 	});
 });
 
@@ -105,6 +125,7 @@ describe("searchPapers", () => {
 		mockFetch.mockResolvedValue({
 			ok: true,
 			status: 200,
+			clone() { return this; },
 			json: async () => ({
 				data: [
 					{
@@ -132,6 +153,7 @@ describe("searchPapers", () => {
 		mockFetch.mockResolvedValue({
 			ok: true,
 			status: 200,
+			clone() { return this; },
 			json: async () => ({ data: [], total: 0 }),
 		});
 
@@ -144,6 +166,7 @@ describe("searchPapers", () => {
 		mockFetch.mockResolvedValue({
 			ok: true,
 			status: 200,
+			clone() { return this; },
 			json: async () => ({ data: [], total: 0 }),
 		});
 
@@ -158,8 +181,37 @@ describe("searchPapers", () => {
 		mockFetch.mockReturnValue(new Promise((r) => { resolve = r; }));
 		const p1 = searchPapers("dedup");
 		const p2 = searchPapers("dedup");
-		resolve!({ ok: true, status: 200, json: async () => ({ data: [], total: 0 }) });
+		resolve!({ ok: true, status: 200, clone() { return this; }, json: async () => ({ data: [], total: 0 }) });
 		await Promise.all([p1, p2]);
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("gives each concurrent caller an independent response body", async () => {
+		// Model a real Response: the body can be read only once, and clone()
+		// yields a fresh, independently-readable Response. Regresses the bug
+		// where two racing callers shared one Response and the second .json()
+		// threw "body stream already read".
+		const makeResp = () => {
+			let read = false;
+			return {
+				ok: true,
+				status: 200,
+				clone: () => makeResp(),
+				json: async () => {
+					if (read) throw new TypeError("body stream already read");
+					read = true;
+					return { data: [], total: 0 };
+				},
+			};
+		};
+		let resolve: (v: unknown) => void;
+		mockFetch.mockReturnValue(new Promise((r) => { resolve = r; }));
+		const p1 = searchPapers("concurrent-body");
+		const p2 = searchPapers("concurrent-body");
+		resolve!(makeResp());
+		const [a, b] = await Promise.all([p1, p2]);
+		expect(a).toEqual({ results: [], total: 0 });
+		expect(b).toEqual({ results: [], total: 0 });
 		expect(mockFetch).toHaveBeenCalledTimes(1);
 	});
 
@@ -171,6 +223,7 @@ describe("searchPapers", () => {
 				ok: call > 1,
 				status: call > 1 ? 200 : 429,
 				headers: new Map(),
+				clone() { return this; },
 				json: async () => ({ data: [], total: 0 }),
 			};
 		});
@@ -195,7 +248,7 @@ describe("getPaperDetail", () => {
 	});
 
 	it("returns null for 404", async () => {
-		mockFetch.mockResolvedValue({ ok: false, status: 404 });
+		mockFetch.mockResolvedValue({ ok: false, status: 404, clone() { return this; } });
 		const result = await getPaperDetail("2301.00123");
 		expect(result).toBeNull();
 	});
@@ -204,6 +257,7 @@ describe("getPaperDetail", () => {
 		mockFetch.mockResolvedValue({
 			ok: true,
 			status: 200,
+			clone() { return this; },
 			json: async () => ({
 				paperId: "abc",
 				title: "Detail Test",
@@ -253,6 +307,7 @@ describe("searchArxivCategory", () => {
 		mockFetch.mockResolvedValue({
 			ok: true,
 			status: 200,
+			clone() { return this; },
 			text: async () => xml,
 		});
 		const result = await searchArxivCategory("cs.LG", { limit: 10 });
