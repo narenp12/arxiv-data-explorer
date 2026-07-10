@@ -1,0 +1,21 @@
+{
+  "architecture": {
+    "layers": [
+      {
+        "name": "utils",
+        "paths": ["src/lib/utils", "src/lib/stores", "src/lib/authors"],
+        "may_not_import": ["src/routes"]
+      },
+      {
+        "name": "scripts",
+        "paths": ["scripts"],
+        "may_not_import": ["src", "crates"]
+      },
+      {
+        "name": "crates",
+        "paths": ["crates"],
+        "may_not_import": ["src", "scripts"]
+      }
+    ]
+  }
+}
