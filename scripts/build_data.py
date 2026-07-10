@@ -2,10 +2,13 @@ import argparse
 import json
 import os
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from collections import defaultdict
 
 import daft
+import numpy as np
 from daft import col as c
 from huggingface_hub import snapshot_download
 
@@ -463,6 +466,98 @@ def build_search_db(df: daft.DataFrame) -> dict:
     return {"total_papers": total, "db_path": str(db_path), "columns": fields}
 
 
+def setup_fulltext_checkpoint() -> tuple[Path, set[str]]:
+    """Return (db_path, set_of_processed_ids) for incremental fulltext."""
+    fulltext_dir = DATA_DIR / "fulltext"
+    fulltext_dir.mkdir(parents=True, exist_ok=True)
+    db_path = fulltext_dir / "checkpoint.db"
+    if db_path.exists():
+        con = sqlite3.connect(str(db_path))
+        done = {r[0] for r in con.execute("SELECT paper_id FROM done").fetchall()}
+        con.close()
+    else:
+        con = sqlite3.connect(str(db_path))
+        con.execute("CREATE TABLE done (paper_id TEXT PRIMARY KEY, extracted_at TEXT)")
+        con.commit()
+        con.close()
+        done = set()
+    return db_path, done
+
+
+def build_fulltext(df: daft.DataFrame, limit: int = 0) -> dict:
+    """Download PDFs and extract full text for papers lacking it."""
+    import httpx
+    import fitz
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    fulltext_dir = DATA_DIR / "fulltext"
+    out_path = fulltext_dir / "papers.parquet"
+    db_path, done_ids = setup_fulltext_checkpoint()
+
+    pdf = df.select(c("id")).to_pandas()
+    pdf = pdf[~pdf["id"].isin(done_ids)]
+
+    if limit > 0:
+        pdf = pdf.head(limit)
+
+    total = len(pdf)
+    if total == 0:
+        print("  All papers already have fulltext.")
+        return {"processed": 0, "total": total, "path": str(out_path)}
+
+    def extract_one(paper_id: str) -> dict:
+        pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf"
+        try:
+            with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+                resp = client.get(pdf_url)
+                resp.raise_for_status()
+                doc = fitz.open(stream=resp.content, filetype="pdf")
+                text = "\n".join(page.get_text() for page in doc)
+                doc.close()
+                return {"id": paper_id, "fulltext": text[:50000]}
+        except Exception:
+            return {"id": paper_id, "fulltext": ""}
+
+    records = []
+    con = sqlite3.connect(str(db_path), check_same_thread=False)
+    t0 = time.time()
+    n_workers = 8
+    paper_ids = pdf["id"].tolist()
+    insert_lock = threading.Lock()
+
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        futures = {pool.submit(extract_one, pid): pid for pid in paper_ids}
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            records.append(result)
+
+            with insert_lock:
+                con.execute("INSERT OR IGNORE INTO done (paper_id, extracted_at) VALUES (?, ?)",
+                            (result["id"], time.strftime("%Y-%m-%dT%H:%M:%S")))
+                con.commit()
+
+            if i % 100 == 0 or i == total:
+                elapsed = time.time() - t0
+                rate = i / elapsed if elapsed > 0 else 0
+                remaining = (total - i) / rate if rate > 0 else 0
+                print(f"  {i:,}/{total:,} — {rate:.1f} PDFs/sec, ~{remaining/60:.0f}m remaining")
+
+                out_df = daft.from_pydict({k: [r[k] for r in records] for k in records[0]})
+                out_df.write_parquet(str(out_path))
+                records = []
+
+    if records:
+        out_df = daft.from_pydict({k: [r[k] for r in records] for k in records[0]})
+        out_df.write_parquet(str(out_path))
+
+    con.close()
+    total_processed = len(pdf)
+    elapsed = time.time() - t0
+    print(f"  Done: {total_processed:,} papers in {elapsed/60:.1f}m ({total_processed/elapsed:.1f}/sec)")
+
+    return {"processed": total_processed, "total": total, "path": str(out_path), "elapsed_s": elapsed}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -471,6 +566,10 @@ def parse_args():
                         help="Full rebuild from all shards")
     parser.add_argument("--sample", type=int, default=0,
                         help="Use a random sample of N papers (for testing)")
+    parser.add_argument("--fulltext", action="store_true", default=False,
+                        help="Run full-text extraction (PDF download + text extraction)")
+    parser.add_argument("--ft-limit", type=int, default=0,
+                        help="Limit full-text extraction to N papers (for testing)")
     return parser.parse_args()
 
 
@@ -518,3 +617,8 @@ if __name__ == "__main__":
     ts = build_timeseries(df)
     (DATA_DIR / "timeseries.json").write_text(json.dumps(ts, separators=(",", ":")))
     print(f"  {len(ts):,} months of data")
+
+    if args.fulltext:
+        print("Building full-text index…")
+        ft_stats = build_fulltext(df, limit=args.ft_limit)
+        print(f"  Processed {ft_stats['processed']:,} papers")
