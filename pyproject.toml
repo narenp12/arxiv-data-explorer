@@ -10,6 +10,9 @@ dependencies = [
     "pandas>=2.2",
     "huggingface-hub>=1.17.0",
     "pymupdf>=1.28.0",
+    "sentence-transformers>=5.6.0",
+    "faiss-cpu>=1.14.3",
+    "scikit-learn>=1.9.0",
 ]
 
 [project.optional-dependencies]

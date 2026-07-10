@@ -15,4 +15,7 @@ target/
 static/data/*.db
 static/data/*.parquet
 static/data/author_graph.json
+static/data/recommendations.json
+static/data/embeddings/
+static/data/fulltext/
 

@@ -558,6 +558,160 @@ def build_fulltext(df: daft.DataFrame, limit: int = 0) -> dict:
     return {"processed": total_processed, "total": total, "path": str(out_path), "elapsed_s": elapsed}
 
 
+def build_ml(df: daft.DataFrame) -> dict:
+    """Run topic clustering and build paper recommendations."""
+    from sentence_transformers import SentenceTransformer
+    from sklearn.cluster import KMeans
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import faiss
+
+    embed_dir = DATA_DIR / "embeddings"
+    embed_path = embed_dir / "papers.parquet"
+    if not embed_path.exists():
+        return {"error": "No embeddings found; run --embeddings first"}
+
+    print("  Loading embeddings…")
+    emb_df = daft.read_parquet(str(embed_path))
+    emb_pdf = emb_df.select(c("id"), c("embedding")).to_pandas()
+    vectors = np.array(emb_pdf["embedding"].tolist(), dtype=np.float32)
+    paper_ids = emb_pdf["id"].tolist()
+    n = len(vectors)
+    print(f"  {n:,} vectors loaded")
+
+    n_clusters = min(10, max(2, n // 100))
+    print(f"  Running KMeans with k={n_clusters}…")
+    km = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
+    labels = km.fit_predict(vectors)
+    centroids = km.cluster_centers_
+
+    fulltext_path = DATA_DIR / "fulltext" / "papers.parquet"
+    if fulltext_path.exists() and n_clusters <= len(vectors):
+        print("  Extracting topic keywords via TF-IDF…")
+        text_df = daft.read_parquet(str(fulltext_path)).to_pandas()
+        text_map = dict(zip(text_df["id"], text_df["fulltext"]))
+        cluster_texts: dict[int, list[str]] = {}
+        for pid, label in zip(paper_ids, labels):
+            t = text_map.get(pid, "")
+            if t:
+                cluster_texts.setdefault(int(label), []).append(t[:2000])
+
+        vectorizer = TfidfVectorizer(max_features=1000, stop_words="english",
+                                      max_df=0.85, min_df=2)
+        topic_keywords = {}
+        for label, txts in cluster_texts.items():
+            if len(txts) < 2:
+                topic_keywords[label] = []
+                continue
+            try:
+                tfidf = vectorizer.fit_transform(txts)
+                avg = tfidf.mean(axis=0).A1
+                top_idx = avg.argsort()[-10:][::-1]
+                keywords = [vectorizer.get_feature_names_out()[i] for i in top_idx if avg[i] > 0]
+                topic_keywords[label] = keywords
+            except Exception:
+                topic_keywords[label] = []
+    else:
+        topic_keywords = {i: [] for i in range(n_clusters)}
+
+    print("  Building recommendations via FAISS…")
+    index = faiss.IndexFlatIP(384)
+    faiss.normalize_L2(vectors)
+    index.add(vectors)
+    k = min(11, n)
+    distances, indices = index.search(vectors, k)
+
+    recs = {}
+    for i, pid in enumerate(paper_ids):
+        similar = []
+        for j in range(1, k):
+            if indices[i][j] < n:
+                similar.append({"id": paper_ids[int(indices[i][j])],
+                                "score": float(distances[i][j])})
+        recs[pid] = similar
+
+    topics_out = []
+    for label in range(n_clusters):
+        member_ids = [paper_ids[i] for i in range(n) if labels[i] == label]
+        topics_out.append({
+            "id": int(label),
+            "size": int((labels == label).sum()),
+            "keywords": topic_keywords.get(label, []),
+            "papers": member_ids[:20],
+        })
+
+    topics_out.sort(key=lambda x: -x["size"])
+    print(f"  {len(topics_out)} topics")
+
+    out = {"topics": topics_out, "total_papers": n}
+    (DATA_DIR / "topics.json").write_text(json.dumps(out, separators=(",", ":")))
+
+    recs_out = {"recommendations": recs, "total_papers": n}
+    (DATA_DIR / "recommendations.json").write_text(json.dumps(recs_out, separators=(",", ":")))
+    print(f"  recommendations for {len(recs):,} papers")
+
+    return {"topics": len(topics_out), "recommendations": len(recs), "total_papers": n}
+
+
+def build_embeddings(df: daft.DataFrame) -> dict:
+    """Generate and store embeddings for all papers (fulltext → abstract fallback)."""
+    from sentence_transformers import SentenceTransformer
+
+    embed_dir = DATA_DIR / "embeddings"
+    embed_dir.mkdir(parents=True, exist_ok=True)
+    out_path = embed_dir / "papers.parquet"
+
+    fulltext_path = DATA_DIR / "fulltext" / "papers.parquet"
+    if fulltext_path.exists():
+        print("  Using fulltext as text source")
+        texts = daft.read_parquet(str(fulltext_path)).select(c("id"), c("fulltext"))
+    else:
+        print("  Using abstracts as text source (no fulltext available)")
+        texts = df.select(c("id"), c("abstract"))
+
+    pdf = texts.to_pandas()
+    pdf.columns = ["id", "text"]
+    pdf["text"] = pdf["text"].fillna("").astype(str)
+
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+    print(f"  Model loaded on {model.device}")
+
+    batch_size = 512
+    total = len(pdf)
+    all_embeddings = np.zeros((total, 384), dtype=np.float32)
+
+    t0 = time.time()
+    for start in range(0, total, batch_size):
+        end = min(start + batch_size, total)
+        batch_texts = pdf["text"].iloc[start:end].tolist()
+        batch_emb = model.encode(batch_texts, show_progress_bar=False)
+        all_embeddings[start:end] = batch_emb.astype(np.float32)
+
+        if (start + batch_size) % 5000 == 0 or end == total:
+            elapsed = time.time() - t0
+            rate = end / elapsed if elapsed > 0 else 0
+            print(f"  {end:,}/{total:,} — {rate:.0f} papers/sec")
+
+    out_df = daft.from_pydict({
+        "id": pdf["id"].tolist(),
+        "embedding": [v.tolist() for v in all_embeddings],
+    })
+    out_df.write_parquet(str(out_path))
+    elapsed = time.time() - t0
+    print(f"  Done: {total:,} embeddings in {elapsed:.1f}s ({total/elapsed:.0f}/sec)")
+
+    try:
+        import faiss
+        index = faiss.IndexFlatIP(384)
+        index.add(all_embeddings)
+        faiss.write_index(index, str(embed_dir / "faiss.index"))
+        print(f"  FAISS index built: {index.ntotal:,} vectors")
+    except ImportError:
+        print("  FAISS not available, skipping index build")
+
+    return {"total": total, "path": str(out_path), "elapsed_s": elapsed}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -570,6 +724,10 @@ def parse_args():
                         help="Run full-text extraction (PDF download + text extraction)")
     parser.add_argument("--ft-limit", type=int, default=0,
                         help="Limit full-text extraction to N papers (for testing)")
+    parser.add_argument("--embeddings", action="store_true", default=False,
+                        help="Generate paper embeddings")
+    parser.add_argument("--ml", action="store_true", default=False,
+                        help="Run ML pipeline (topic clustering + recommendations)")
     return parser.parse_args()
 
 
@@ -622,3 +780,16 @@ if __name__ == "__main__":
         print("Building full-text index…")
         ft_stats = build_fulltext(df, limit=args.ft_limit)
         print(f"  Processed {ft_stats['processed']:,} papers")
+
+    if args.embeddings:
+        print("Generating paper embeddings…")
+        emb_stats = build_embeddings(df)
+        print(f"  {emb_stats['total']:,} embeddings in {emb_stats['elapsed_s']:.1f}s")
+
+    if args.ml:
+        print("Running ML pipeline…")
+        ml_stats = build_ml(df)
+        if "error" in ml_stats:
+            print(f"  Error: {ml_stats['error']}")
+        else:
+            print(f"  {ml_stats['topics']} topics, {ml_stats['recommendations']:,} recommendations")
