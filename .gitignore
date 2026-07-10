@@ -18,4 +18,9 @@ static/data/author_graph.json
 static/data/recommendations.json
 static/data/embeddings/
 static/data/fulltext/
+static/data/category_graph.json
+static/data/category_stats.json
+static/data/timeseries.json
+static/data/topics.json
+static/data/author_rankings.json
 
