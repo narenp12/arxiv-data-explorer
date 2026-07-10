@@ -12,4 +12,7 @@ __pycache__/
 build/
 node_modules/
 target/
+static/data/*.db
+static/data/*.parquet
+static/data/author_graph.json
 

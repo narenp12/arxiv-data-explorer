@@ -313,6 +313,156 @@ def build_author_rankings(df: daft.DataFrame) -> list[dict]:
     ]
 
 
+def build_category_hierarchy(df: daft.DataFrame) -> dict:
+    """Build category hierarchy tree with per-category and per-domain counts."""
+    pdf = df.select(c("id"), c("categories")).to_pandas()
+
+    domain_counts: dict[str, dict] = {}
+    cat_papers: dict[str, set] = {}
+
+    for _, row in pdf.iterrows():
+        cats = str(row["categories"]).split()
+        doc_id = row["id"]
+        for cat in cats:
+            cat = CATEGORY_ALIASES.get(cat, cat)
+            if "." in cat:
+                dom = cat.split(".")[0]
+            else:
+                dom = cat
+
+            domain_counts.setdefault(dom, {"id": dom, "count": 0, "children": {}})
+            domain_counts[dom]["count"] += 1
+
+            cat_papers.setdefault(cat, set()).add(doc_id)
+
+    for dom in domain_counts:
+        domain_counts[dom]["children"] = [
+            {"id": cat, "count": len(papers)}
+            for cat, papers in cat_papers.items()
+            if (cat.split(".")[0] if "." in cat else cat) == dom
+        ]
+        domain_counts[dom]["children"].sort(key=lambda x: -x["count"])
+
+    nodes = sorted(domain_counts.values(), key=lambda x: -x["count"])
+
+    return {
+        "nodes": nodes,
+        "total_categories": len(cat_papers),
+        "total_domains": len(nodes),
+    }
+
+
+def build_category_stats(df: daft.DataFrame) -> dict:
+    """Build category paper counts and yearly time series per category."""
+    indexed = df._add_monotonically_increasing_id("_row_idx") \
+        .select("_row_idx", "categories", "update_date")
+
+    exploded = indexed.with_column(
+        "cat_list", c("categories").split(" ")
+    ).explode("cat_list").with_column(
+        "cat_list", c("cat_list").apply(
+            lambda x: CATEGORY_ALIASES.get(x, x),
+            return_dtype=daft.DataType.string(),
+        )
+    ).with_column(
+        "year", c("update_date").apply(
+            lambda x: str(x)[:4] if x else None,
+            return_dtype=daft.DataType.string(),
+        )
+    ).distinct("_row_idx", "cat_list", "year")
+
+    year_counts = exploded.groupby(["cat_list", "year"]).agg(
+        c("cat_list").count().alias("count")
+    ).sort(c("year"))
+
+    total_counts = exploded.groupby("cat_list").agg(
+        c("cat_list").count().alias("total")
+    ).sort(c("total"), desc=True)
+
+    total_pdf = total_counts.to_pandas()
+    years_pdf = year_counts.to_pandas()
+
+    category_data = {}
+    for _, r in total_pdf.iterrows():
+        cat = r["cat_list"]
+        category_data[cat] = {"id": cat, "total": int(r["total"]), "by_year": {}}
+
+    for _, r in years_pdf.iterrows():
+        cat = r["cat_list"]
+        if cat in category_data:
+            category_data[cat]["by_year"][str(r["year"])] = int(r["count"])
+
+    return {
+        "categories": sorted(category_data.values(), key=lambda x: -x["total"]),
+        "total_papers": exploded.distinct("_row_idx").count_rows(),
+    }
+
+
+def build_timeseries(df: daft.DataFrame) -> list[dict]:
+    """Build monthly paper publication counts."""
+    pdf = df.select(c("update_date")).to_pandas()
+    pdf["update_date"] = pdf["update_date"].astype(str)
+
+    pdf = pdf[pdf["update_date"].str.match(r"^\d{4}-\d{2}-\d{2}$")]
+    pdf["year_month"] = pdf["update_date"].str[:7]
+
+    monthly = pdf.groupby("year_month").size().reset_index()
+    monthly.columns = ["month", "count"]
+    monthly = monthly.sort_values("month")
+
+    return [{"month": r["month"], "count": int(r["count"])} for _, r in monthly.iterrows()]
+
+
+def build_search_db(df: daft.DataFrame) -> dict:
+    """Build SQLite FTS5 search index over id, title, abstract, authors, categories."""
+    db_path = DATA_DIR / "search.db"
+    if db_path.exists():
+        db_path.unlink()
+
+    fields = ["id", "title", "abstract", "authors", "categories", "update_date"]
+    pdf = df.select(*[c(f) for f in fields]).to_pandas()
+
+    con = sqlite3.connect(str(db_path))
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=OFF")
+    con.execute("PRAGMA cache_size=-80000")
+
+    con.execute("""CREATE VIRTUAL TABLE papers_fts USING fts5(
+        id, title, abstract, authors, categories,
+        tokenize='porter unicode61',
+        content=''
+    )""")
+
+    batch_size = 5000
+    total = len(pdf)
+    for start in range(0, total, batch_size):
+        batch = pdf.iloc[start:start + batch_size]
+        rows = []
+        for _, r in batch.iterrows():
+            authors_str = r.get("authors", "") or ""
+            abstract_str = r.get("abstract", "") or ""
+            title_str = r.get("title", "") or ""
+            cat_str = r.get("categories", "") or ""
+            doc_id = r.get("id", "") or ""
+            rows.append((doc_id, title_str, abstract_str, authors_str, cat_str))
+        con.executemany(
+            "INSERT INTO papers_fts (id, title, abstract, authors, categories) VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+        con.commit()
+        print(f"  Indexed {start + len(batch):,}/{total:,}")
+
+    con.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    con.execute("INSERT INTO meta (key, value) VALUES (?, ?)",
+                ("last_updated", str(pdf["update_date"].max())))
+    con.execute("INSERT INTO meta (key, value) VALUES (?, ?)",
+                ("total_papers", str(total)))
+    con.commit()
+    con.close()
+
+    return {"total_papers": total, "db_path": str(db_path), "columns": fields}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -349,3 +499,22 @@ if __name__ == "__main__":
     author_rankings = build_author_rankings(df)
     (DATA_DIR / "author_rankings.json").write_text(json.dumps(author_rankings, separators=(",", ":")))
     print(f"  {len(author_rankings):,} ranked authors")
+
+    print("Building FTS5 search database…")
+    search_stats = build_search_db(df)
+    print(f"  Indexed {search_stats['total_papers']:,} papers in search.db")
+
+    print("Building category hierarchy…")
+    hierarchy = build_category_hierarchy(df)
+    (DATA_DIR / "category_hierarchy.json").write_text(json.dumps(hierarchy, separators=(",", ":")))
+    print(f"  {hierarchy['total_domains']} domains, {hierarchy['total_categories']} categories")
+
+    print("Building category stats…")
+    cat_stats = build_category_stats(df)
+    (DATA_DIR / "category_stats.json").write_text(json.dumps(cat_stats, separators=(",", ":")))
+    print(f"  {len(cat_stats['categories']):,} categories across {cat_stats['total_papers']:,} papers")
+
+    print("Building publication timeseries…")
+    ts = build_timeseries(df)
+    (DATA_DIR / "timeseries.json").write_text(json.dumps(ts, separators=(",", ":")))
+    print(f"  {len(ts):,} months of data")
