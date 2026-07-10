@@ -728,6 +728,8 @@ def parse_args():
                         help="Generate paper embeddings")
     parser.add_argument("--ml", action="store_true", default=False,
                         help="Run ML pipeline (topic clustering + recommendations)")
+    parser.add_argument("--gpu", action="store_true", default=False,
+                        help="Enable Daft GPU UDFs (for NVIDIA GPU machines)")
     return parser.parse_args()
 
 
