@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy } from "./db.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy, sanitiseYearRange, sanitiseMinCites, getCached, setCached, parseArxivTotal } from "./db.js";
 
 vi.mock("../../../static/wasm/arxcheck/arxcheck.js", () => ({
 	default: async () => {},
@@ -316,5 +316,319 @@ describe("searchArxivCategory", () => {
 		expect(result.results[0].title).toBe("An arXiv Paper");
 		expect(result.results[0].authors).toBe("Alice, Bob");
 		expect(result.results[0].isArxiv).toBe(true);
+	});
+});
+
+describe("sanitiseYearRange", () => {
+	it("handles typical range", () => {
+		expect(sanitiseYearRange("2020-2024")).toBe("2020-2024");
+	});
+	it("handles single year", () => {
+		expect(sanitiseYearRange("2024")).toBe("2024");
+	});
+	it("handles empty string", () => {
+		expect(sanitiseYearRange("")).toBe("");
+	});
+	it("handles undefined values", () => {
+		expect(sanitiseYearRange(undefined as unknown as string)).toBe("");
+	});
+	it("handles reversed years", () => {
+		expect(sanitiseYearRange("2024-2020")).toBe("2024-2020");
+	});
+	it("rejects invalid formats", () => {
+		expect(sanitiseYearRange("abc")).toBe("");
+		expect(sanitiseYearRange("20-24")).toBe("");
+		expect(sanitiseYearRange("2024-")).toBe("");
+		expect(sanitiseYearRange("-2024")).toBe("");
+		expect(sanitiseYearRange("20241-2025")).toBe("");
+	});
+});
+
+describe("sanitiseMinCites", () => {
+	it("handles valid numbers", () => {
+		expect(sanitiseMinCites("5")).toBe("5");
+		expect(sanitiseMinCites("100")).toBe("100");
+		expect(sanitiseMinCites("999999")).toBe("999999");
+	});
+	it("handles empty string", () => {
+		expect(sanitiseMinCites("")).toBe("");
+	});
+	it("handles undefined", () => {
+		expect(sanitiseMinCites(undefined as unknown as string)).toBe("");
+	});
+	it("rejects values over 6 digits", () => {
+		expect(sanitiseMinCites("1000000")).toBe("");
+	});
+	it("rejects non-numeric input", () => {
+		expect(sanitiseMinCites("abc")).toBe("");
+		expect(sanitiseMinCites("-5")).toBe("");
+	});
+});
+
+describe("getCached / setCached / clearSearchCache", () => {
+	it("stores and retrieves values", () => {
+		const cache = new Map<string, number>();
+		setCached(cache, "key", 42);
+		expect(getCached(cache, "key")).toBe(42);
+	});
+
+	it("returns undefined for missing key", () => {
+		const cache = new Map<string, number>();
+		expect(getCached(cache, "nope")).toBeUndefined();
+	});
+
+	it("promotes accessed key to end (LRU)", () => {
+		const cache = new Map<string, number>();
+		setCached(cache, "a", 1);
+		setCached(cache, "b", 2);
+		setCached(cache, "c", 3);
+		getCached(cache, "a");
+		expect([...cache.keys()]).toEqual(["b", "c", "a"]);
+	});
+
+	it("evicts oldest entry when exceeding limit", () => {
+		const cache = new Map<number, string>();
+		for (let i = 0; i < 100; i++) setCached(cache, i, `v${i}`);
+		expect(cache.size).toBe(100);
+		setCached(cache, 100, "overflow");
+		expect(cache.size).toBe(100);
+		expect(cache.has(0)).toBe(false);
+		expect(cache.has(100)).toBe(true);
+	});
+
+	it("updates existing key in place", () => {
+		const cache = new Map<string, string>();
+		setCached(cache, "k", "old");
+		setCached(cache, "k", "new");
+		expect(cache.size).toBe(1);
+		expect(getCached(cache, "k")).toBe("new");
+	});
+
+	it("clearSearchCache empties module-level caches", async () => {
+		const mockFetch = vi.fn();
+		const orig = globalThis.fetch;
+		globalThis.fetch = mockFetch;
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({ data: [], total: 0 }),
+		});
+		clearSearchCache();
+		await searchPapers("ccc");
+		clearSearchCache();
+		await searchPapers("ccc");
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+		globalThis.fetch = orig;
+	});
+});
+
+describe("rateLimitedFetchOnce", () => {
+	const mockFetch = vi.fn();
+	const orig = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = mockFetch;
+		clearSearchCache();
+	});
+
+	afterEach(() => {
+		globalThis.fetch = orig;
+	});
+
+	it("deduplicates concurrent requests for the same URL", async () => {
+		let resolve!: (v: unknown) => void;
+		mockFetch.mockReturnValue(new Promise((r) => { resolve = r; }));
+		const p1 = searchPapers("dedup-rlfo");
+		const p2 = searchPapers("dedup-rlfo");
+		resolve!({ ok: true, status: 200, clone() { return this; }, json: async () => ({ data: [], total: 0 }) });
+		await Promise.all([p1, p2]);
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+	});
+
+	it("handles sequential requests to different URLs", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({ data: [], total: 0 }),
+		});
+		await searchPapers("seq-a");
+		await searchPapers("seq-b");
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("buildSearchUrl", () => {
+	const mockFetch = vi.fn();
+	const orig = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = mockFetch;
+		clearSearchCache();
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({ data: [], total: 0 }),
+		});
+	});
+
+	afterEach(() => {
+		globalThis.fetch = orig;
+	});
+
+	it("constructs URL with basic query", async () => {
+		await searchPapers("test");
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).toContain("/api/s2/graph/v1/paper/search");
+		expect(url).toContain("query=test");
+	});
+
+	it("includes limit and offset", async () => {
+		await searchPapers("paged", { limit: 5, offset: 10 });
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).toContain("limit=5");
+		expect(url).toContain("offset=10");
+	});
+
+	it("includes year range when valid", async () => {
+		await searchPapers("years", { yearRange: "2020-2024" });
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).toContain("year=2020-2024");
+	});
+
+	it("omits year range when sanitised empty", async () => {
+		await searchPapers("bad-year", { yearRange: "invalid" });
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).not.toContain("year=");
+	});
+
+	it("includes minCites when valid", async () => {
+		await searchPapers("cited", { minCites: "50" });
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).toContain("minCitationCount=50");
+	});
+
+	it("handles all options together", async () => {
+		await searchPapers("all-options", { yearRange: "2022", fieldOfStudy: "Physics", minCites: "10", limit: 50, offset: 100 });
+		const url = mockFetch.mock.calls[0][0] as string;
+		expect(url).toContain("query=all-options");
+		expect(url).toContain("limit=50");
+		expect(url).toContain("offset=100");
+		expect(url).toContain("year=2022");
+		expect(url).toContain("fieldsOfStudy=Physics");
+		expect(url).toContain("minCitationCount=10");
+	});
+});
+
+describe("parseSearchResponse", () => {
+	const mockFetch = vi.fn();
+	const orig = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		globalThis.fetch = mockFetch;
+		clearSearchCache();
+	});
+
+	afterEach(() => {
+		globalThis.fetch = orig;
+	});
+
+	it("parses a valid response with results", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({
+				data: [
+					{ paperId: "abc", title: "Paper A", year: 2024, citationCount: 5, authors: [{ name: "Alice" }], externalIds: { ArXiv: "2401.00123v1" } },
+					{ paperId: "def", title: "Paper B", year: null, citationCount: 0, authors: [{ name: "Bob" }], externalIds: {} },
+				],
+				total: 2,
+			}),
+		});
+		const result = await searchPapers("two-results");
+		expect(result.results).toHaveLength(2);
+		expect(result.total).toBe(2);
+		expect(result.results[0].id).toBe("2401.00123");
+		expect(result.results[0].isArxiv).toBe(true);
+		expect(result.results[1].id).toBe("def");
+		expect(result.results[1].isArxiv).toBe(false);
+	});
+
+	it("handles empty result set", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({ data: [], total: 0 }),
+		});
+		const result = await searchPapers("empty-results");
+		expect(result.results).toEqual([]);
+		expect(result.total).toBe(0);
+	});
+
+	it("handles missing fields gracefully", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({
+				data: [
+					{},
+					{ paperId: "abc", title: "T", authors: [{ name: "A" }] },
+				] as Record<string, unknown>[],
+				total: 2,
+			}),
+		});
+		const result = await searchPapers("sparse-data");
+		expect(result.results).toHaveLength(2);
+		expect(result.results[0].title).toBe("");
+		expect(result.results[0].citationCount).toBe(0);
+		expect(result.results[1].title).toBe("T");
+	});
+
+	it("handles authors with missing names", async () => {
+		mockFetch.mockResolvedValue({
+			ok: true, status: 200,
+			clone() { return this; },
+			json: async () => ({
+				data: [
+					{ paperId: "abc", title: "T", year: 2024, citationCount: 1, authors: [{ name: "Alice" }, {}], externalIds: {} },
+				],
+				total: 1,
+			}),
+		});
+		const result = await searchPapers("authors");
+		expect(result.results[0].authors).toBe("Alice, ");
+	});
+});
+
+describe("parseArxivTotal", () => {
+	it("extracts total results count from XML", () => {
+		const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <opensearch:totalResults>100</opensearch:totalResults>
+</feed>`;
+		const doc = new DOMParser().parseFromString(xml, "application/xml");
+		expect(parseArxivTotal(doc)).toBe(100);
+	});
+
+	it("returns 0 when totalResults is missing", () => {
+		const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry><title>Test</title></entry>
+</feed>`;
+		const doc = new DOMParser().parseFromString(xml, "application/xml");
+		expect(parseArxivTotal(doc)).toBe(0);
+	});
+
+	it("returns 0 when totalResults is empty", () => {
+		const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
+  <opensearch:totalResults></opensearch:totalResults>
+</feed>`;
+		const doc = new DOMParser().parseFromString(xml, "application/xml");
+		expect(parseArxivTotal(doc)).toBe(0);
 	});
 });

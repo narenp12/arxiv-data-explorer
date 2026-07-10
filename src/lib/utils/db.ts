@@ -74,7 +74,7 @@ const inFlight = new Map<string, Promise<Response>>();
 
 export function clearSearchCache() { searchCache.clear(); detailCache.clear(); inFlight.clear(); lastRequest = 0; requestQueue = Promise.resolve(); }
 
-function getCached<K, V>(cache: Map<K, V>, key: K): V | undefined {
+export function getCached<K, V>(cache: Map<K, V>, key: K): V | undefined {
 	const val = cache.get(key);
 	if (val !== undefined) {
 		cache.delete(key);
@@ -83,7 +83,7 @@ function getCached<K, V>(cache: Map<K, V>, key: K): V | undefined {
 	return val;
 }
 
-function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
+export function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
 	cache.delete(key);
 	cache.set(key, value);
 	if (cache.size > CACHE_LIMIT) {
@@ -209,7 +209,7 @@ function parseArxivResponse(doc: Document): PaperResult[] {
 	});
 }
 
-function parseArxivTotal(doc: Document): number {
+export function parseArxivTotal(doc: Document): number {
 	const totalResultsEl = doc.getElementsByTagNameNS(
 		"http://a9.com/-/spec/opensearch/1.1/",
 		"totalResults",
