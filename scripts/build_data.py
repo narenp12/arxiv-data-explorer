@@ -67,47 +67,63 @@ DOMAIN_COLORS = {
 }
 
 
-def load_shards(incremental: bool = True) -> daft.DataFrame:
+def load_shards(incremental: bool = True, sample: int = 0) -> daft.DataFrame:
     """Load all Parquet shards from HuggingFace, deduplicate, strip vectors."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     if incremental and (DATA_DIR / "papers.parquet").exists():
         existing = daft.read_parquet(str(DATA_DIR / "papers.parquet"))
+        existing = existing.distinct("id")
+        print(f"Existing dataset: {existing.count_rows():,} papers")
         max_date = existing.select(c("update_date").max()).collect()[0]["update_date"]
-        print(f"Existing dataset: {existing.count_rows():,} papers, last date {max_date}")
     else:
         existing = None
         max_date = None
 
     print("Downloading shards from HuggingFace…")
     cache_path = snapshot_download(REMOTE_REPO, repo_type="dataset")
-    pattern = str(Path(cache_path) / "**" / "*.parquet")
-    full = daft.read_parquet(pattern)
+    shard_files = sorted(Path(cache_path).rglob("*.parquet"))
+    print(f"Found {len(shard_files)} shard files")
+
+    if sample:
+        papers_per_shard = 7200
+        n_shards = max(50, sample // papers_per_shard)
+        shard_files = shard_files[:n_shards]
+        print(f"Using {len(shard_files)} shards for sample of ~{sample:,}")
+
+    dfs = []
+    for i, f in enumerate(shard_files):
+        if i % 100 == 0:
+            print(f"  Reading shard {i}/{len(shard_files)}…")
+        df = daft.read_parquet(str(f))
+
+        if max_date is not None and "update_date" in df.schema().column_names():
+            df = df.where(c("update_date") > max_date)
+
+        dfs.append(df)
+
+    if not dfs:
+        print("No new shards to process.")
+        return existing
+
+    full = daft.concat(dfs)
+    print(f"Concatenated {len(dfs)} shards")
 
     if "vector" in full.schema().column_names():
         full = full.exclude("vector")
 
-    if max_date is not None and "update_date" in full.schema().column_names():
-        full = full.where(c("update_date") > max_date)
-
-    if "authors_parsed" in full.schema().column_names():
-        col_type = full.schema()["authors_parsed"]
-        if col_type == daft.DataType.string():
-            full = full.with_column(c("authors_parsed").apply(
-                json.loads,
-                return_dtype=daft.DataType.python(),
-            ))
-
-    if "versions" in full.schema().column_names():
-        col_type = full.schema()["versions"]
-        if col_type == daft.DataType.string():
-            full = full.with_column(c("versions").apply(
-                json.loads,
-                return_dtype=daft.DataType.python(),
-            ))
+    for col_name in ["authors_parsed", "versions"]:
+        if col_name in full.schema().column_names():
+            dtype = full.schema()[col_name].dtype
+            if dtype == daft.DataType.string():
+                full = full.with_column(
+                    col_name,
+                    c(col_name).apply(json.loads, return_dtype=daft.DataType.python()),
+                )
 
     full = full.distinct("id")
-    print(f"New papers loaded: {full.count_rows():,}")
+    n = full.count_rows()
+    print(f"New papers loaded: {n:,}")
 
     if existing is not None:
         full = daft.concat([existing, full]).distinct("id")
@@ -207,6 +223,96 @@ def build_category_graph(df: daft.DataFrame) -> dict:
     }
 
 
+def build_author_graph(df: daft.DataFrame) -> dict:
+    """Build author co-authorship graph from papers DataFrame."""
+    def format_author_list(names):
+        if not names or not isinstance(names, list):
+            return []
+        result = []
+        for n in names:
+            if n and len(n) >= 2:
+                last = n[1] or ""
+                first = n[0] or ""
+                name = f"{last} {first}".strip()
+                if name:
+                    result.append(name)
+        return result
+
+    authors = df.with_column(
+        "author_list",
+        c("authors_parsed").apply(
+            format_author_list,
+            return_dtype=daft.DataType.python(),
+        ),
+    )
+
+    pdf = authors.select(c("author_list")).to_pandas()
+    name_counts: dict[str, int] = {}
+    pair_counts: dict[tuple[str, str], int] = {}
+
+    for row in pdf["author_list"]:
+        if not row:
+            continue
+        for name in row:
+            name_counts[name] = name_counts.get(name, 0) + 1
+        for i in range(len(row)):
+            for j in range(i + 1, len(row)):
+                a, b = (row[i], row[j]) if row[i] < row[j] else (row[j], row[i])
+                pair_counts[(a, b)] = pair_counts.get((a, b), 0) + 1
+
+    top_authors = sorted(name_counts.items(), key=lambda x: -x[1])[:50000]
+    author_set = {a for a, _ in top_authors}
+
+    filtered_pairs = [(a, b, c) for (a, b), c in pair_counts.items()
+                      if a in author_set and b in author_set]
+    filtered_pairs.sort(key=lambda x: -x[2])
+
+    nodes = [{"id": name, "label": name, "weight": cnt} for name, cnt in top_authors]
+    edges = [{"source": a, "target": b, "weight": cnt} for a, b, cnt in filtered_pairs[:200000]]
+
+    return {"nodes": nodes, "edges": edges, "metadata": {"total_nodes": len(nodes), "total_edges": len(edges)}}
+
+
+def build_author_rankings(df: daft.DataFrame) -> list[dict]:
+    """Build top author rankings by paper count."""
+    def format_author_list(names):
+        if not names or not isinstance(names, list):
+            return []
+        result = []
+        for n in names:
+            if n and len(n) >= 2:
+                last = n[1] or ""
+                first = n[0] or ""
+                name = f"{last} {first}".strip()
+                if name:
+                    result.append(name)
+        return result
+
+    authors = df.with_column(
+        "author_list",
+        c("authors_parsed").apply(
+            format_author_list,
+            return_dtype=daft.DataType.python(),
+        ),
+    )
+
+    pdf = authors.select(c("author_list")).to_pandas()
+    name_counts: dict[str, int] = {}
+    for row in pdf["author_list"]:
+        if not row:
+            continue
+        for name in row:
+            name_counts[name] = name_counts.get(name, 0) + 1
+
+    top = sorted(name_counts.items(), key=lambda x: -x[1])[:1000]
+    max_count = top[0][1] if top else 1
+
+    return [
+        {"name": name, "papers": cnt, "relative": round(cnt / max_count * 100)}
+        for name, cnt in top
+    ]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -220,15 +326,11 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    df = load_shards(incremental=args.incremental)
+    df = load_shards(incremental=args.incremental, sample=args.sample)
 
     if df is None:
         print("No data to process.")
         exit(0)
-
-    if args.sample:
-        df = df.sample(size=min(args.sample, df.count_rows()))
-        print(f"Using sample of {args.sample:,} papers")
 
     print(f"Total papers: {df.count_rows():,}")
     print(f"Columns: {df.schema().column_names()}")
@@ -237,3 +339,13 @@ if __name__ == "__main__":
     cat_graph = build_category_graph(df)
     (DATA_DIR / "category_graph.json").write_text(json.dumps(cat_graph, separators=(",", ":")))
     print(f"  {cat_graph['metadata']['total_nodes']} nodes, {cat_graph['metadata']['total_edges']} edges")
+
+    print("Building author graph…")
+    author_graph = build_author_graph(df)
+    (DATA_DIR / "author_graph.json").write_text(json.dumps(author_graph, separators=(",", ":")))
+    print(f"  {author_graph['metadata']['total_nodes']:,} nodes, {author_graph['metadata']['total_edges']:,} edges")
+
+    print("Building author rankings…")
+    author_rankings = build_author_rankings(df)
+    (DATA_DIR / "author_rankings.json").write_text(json.dumps(author_rankings, separators=(",", ":")))
+    print(f"  {len(author_rankings):,} ranked authors")
