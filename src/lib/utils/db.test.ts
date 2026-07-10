@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy, sanitiseYearRange, sanitiseMinCites, getCached, setCached, parseArxivTotal } from "./db.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy, sanitiseYearRange, sanitiseMinCites, getCached, setCached, parseArxivTotal } from "./db/index.js";
 
 vi.mock("../../../static/wasm/arxcheck/arxcheck.js", () => ({
 	default: async () => {},
