@@ -74,55 +74,137 @@ def load_shards(incremental: bool = True) -> daft.DataFrame:
     if incremental and (DATA_DIR / "papers.parquet").exists():
         existing = daft.read_parquet(str(DATA_DIR / "papers.parquet"))
         max_date = existing.select(c("update_date").max()).collect()[0]["update_date"]
-        print(f"Existing dataset: {len(existing):,} papers, last date {max_date}")
+        print(f"Existing dataset: {existing.count_rows():,} papers, last date {max_date}")
     else:
         existing = None
         max_date = None
 
     print("Downloading shards from HuggingFace…")
     cache_path = snapshot_download(REMOTE_REPO, repo_type="dataset")
-    shard_files = sorted(Path(cache_path).glob("*.parquet"))
+    pattern = str(Path(cache_path) / "**" / "*.parquet")
+    full = daft.read_parquet(pattern)
 
-    dfs = []
-    for f in shard_files:
-        print(f"  Loading {f.name}…")
-        df = daft.read_parquet(str(f))
-        if "vector" in df.schema().column_names():
-            df = df.exclude("vector")
+    if "vector" in full.schema().column_names():
+        full = full.exclude("vector")
 
-        if max_date is not None and "update_date" in df.schema().column_names():
-            df = df.where(c("update_date") > max_date)
+    if max_date is not None and "update_date" in full.schema().column_names():
+        full = full.where(c("update_date") > max_date)
 
-        if "authors_parsed" in df.schema().column_names():
-            col_type = df.schema()["authors_parsed"]
-            if col_type == daft.DataType.string():
-                df = df.with_column(c("authors_parsed").apply(
-                    json.loads,
-                    return_dtype=daft.DataType.python(),
-                ))
+    if "authors_parsed" in full.schema().column_names():
+        col_type = full.schema()["authors_parsed"]
+        if col_type == daft.DataType.string():
+            full = full.with_column(c("authors_parsed").apply(
+                json.loads,
+                return_dtype=daft.DataType.python(),
+            ))
 
-        if "versions" in df.schema().column_names():
-            col_type = df.schema()["versions"]
-            if col_type == daft.DataType.string():
-                df = df.with_column(c("versions").apply(
-                    json.loads,
-                    return_dtype=daft.DataType.python(),
-                ))
+    if "versions" in full.schema().column_names():
+        col_type = full.schema()["versions"]
+        if col_type == daft.DataType.string():
+            full = full.with_column(c("versions").apply(
+                json.loads,
+                return_dtype=daft.DataType.python(),
+            ))
 
-        dfs.append(df)
-
-    if not dfs:
-        print("No new shards to process.")
-        return existing
-
-    full = daft.concat(dfs)
-    full = full.distinct(subset=["id"])
-    print(f"New papers loaded: {len(full):,}")
+    full = full.distinct("id")
+    print(f"New papers loaded: {full.count_rows():,}")
 
     if existing is not None:
-        full = daft.concat([existing, full]).distinct(subset=["id"])
+        full = daft.concat([existing, full]).distinct("id")
 
     return full
+
+
+def build_category_graph(df: daft.DataFrame) -> dict:
+    """Build category co-occurrence graph from papers DataFrame."""
+    indexed = df._add_monotonically_increasing_id("_row_idx").select("_row_idx", "categories")
+
+    exploded = indexed.with_column(
+        "cat_list", c("categories").split(" ")
+    ).explode("cat_list").with_column(
+        "cat_list", c("cat_list").apply(
+            lambda x: CATEGORY_ALIASES.get(x, x),
+            return_dtype=daft.DataType.string(),
+        )
+    ).distinct("_row_idx", "cat_list")
+
+    paper_counts = exploded.groupby("cat_list").agg(
+        c("cat_list").count().alias("count")
+    ).sort(c("count"), desc=True)
+
+    cooc = exploded.join(
+        exploded, on="_row_idx", how="inner", suffix="_b"
+    ).where(c("cat_list") < c("cat_list_b"))
+
+    cooc_counts = cooc.groupby(["cat_list", "cat_list_b"]).agg(
+        c("cat_list").count().alias("count")
+    )
+
+    top_n = 200
+    top = paper_counts.limit(top_n)
+    cat_set = set(top.to_pandas()["cat_list"].tolist())
+
+    filtered = cooc_counts.where(
+        c("cat_list").is_in(list(cat_set))
+        & c("cat_list_b").is_in(list(cat_set))
+        & (c("count") >= 5)
+    )
+
+    pdf = filtered.to_pandas()
+    node_pdf = paper_counts.to_pandas()
+    node_weight = dict(zip(node_pdf["cat_list"], node_pdf["count"]))
+
+    edge_list = pdf.to_dict("records")
+    edge_list.sort(key=lambda x: -x["count"])
+
+    top_20_per_cat: dict[str, list[dict]] = {}
+    for e in edge_list:
+        cat_a = e["cat_list"]
+        cat_b = e["cat_list_b"]
+        top_20_per_cat.setdefault(cat_a, []).append(e)
+        top_20_per_cat.setdefault(cat_b, []).append(e)
+
+    pruned_edges = []
+    seen_pairs = set()
+    for edges in top_20_per_cat.values():
+        edges.sort(key=lambda x: -x["count"])
+        for e in edges[:20]:
+            pair = (e["cat_list"], e["cat_list_b"])
+            if pair not in seen_pairs and e["cat_list"] in cat_set and e["cat_list_b"] in cat_set:
+                seen_pairs.add(pair)
+                pruned_edges.append(e)
+
+    def domain_of(cat: str) -> str:
+        return cat.split(".")[0]
+
+    nodes = []
+    for cat, weight in node_weight.items():
+        if cat not in cat_set:
+            continue
+        dom = domain_of(cat)
+        nodes.append({
+            "id": cat,
+            "label": cat,
+            "domain": dom,
+            "group": DOMAIN_NAMES.get(dom, dom),
+            "weight": int(weight),
+            "color": DOMAIN_COLORS.get(dom, "#999999"),
+        })
+
+    edges = [
+        {"source": e["cat_list"], "target": e["cat_list_b"], "weight": int(e["count"])}
+        for e in pruned_edges
+    ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "metadata": {
+            "total_nodes": len(nodes),
+            "total_edges": len(edges),
+            "last_updated": str(df.select(c("update_date").max()).collect()[0]["update_date"]),
+        },
+    }
 
 
 def parse_args():
@@ -145,8 +227,13 @@ if __name__ == "__main__":
         exit(0)
 
     if args.sample:
-        df = df.sample(min(args.sample, len(df)))
-        print(f"Using sample of {len(df):,} papers")
+        df = df.sample(size=min(args.sample, df.count_rows()))
+        print(f"Using sample of {args.sample:,} papers")
 
-    print(f"Total papers: {len(df):,}")
+    print(f"Total papers: {df.count_rows():,}")
     print(f"Columns: {df.schema().column_names()}")
+
+    print("Building category graph…")
+    cat_graph = build_category_graph(df)
+    (DATA_DIR / "category_graph.json").write_text(json.dumps(cat_graph, separators=(",", ":")))
+    print(f"  {cat_graph['metadata']['total_nodes']} nodes, {cat_graph['metadata']['total_edges']} edges")
