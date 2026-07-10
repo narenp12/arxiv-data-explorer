@@ -80,6 +80,12 @@ ls src/ crates/ functions/ svelte.config.js                    # frontend files 
 git rm scripts/build_trends.py scripts/build_author_shards.mjs scripts/postbuild.mjs scripts/requirements.txt
 ```
 
+- [ ] **Step 1b: Fix package.json build script** (postbuild.mjs no longer exists)
+
+Modify the `"build"` script in `package.json`:
+- Replace: `"build": "vite build && node scripts/postbuild.mjs",`
+- With: `"build": "vite build",`
+
 - [ ] **Step 2: Update .gitignore**
 
 Read the current `.gitignore` and ensure it contains all patterns below:
