@@ -340,18 +340,29 @@ def build_category_hierarchy(df: daft.DataFrame) -> dict:
 
     for dom in domain_counts:
         domain_counts[dom]["children"] = [
-            {"id": cat, "count": len(papers)}
+            {"id": cat, "label": cat, "papers": len(papers)}
             for cat, papers in cat_papers.items()
             if (cat.split(".")[0] if "." in cat else cat) == dom
         ]
-        domain_counts[dom]["children"].sort(key=lambda x: -x["count"])
+        domain_counts[dom]["children"].sort(key=lambda x: -x["papers"])
 
     nodes = sorted(domain_counts.values(), key=lambda x: -x["count"])
 
+    domains = [
+        {
+            "id": d["id"],
+            "label": DOMAIN_NAMES.get(d["id"], d["id"]),
+            "color": DOMAIN_COLORS.get(d["id"], "#999999"),
+            "papers": d["count"],
+            "subcategories": d["children"],
+        }
+        for d in nodes
+    ]
+
     return {
-        "nodes": nodes,
+        "domains": domains,
+        "total_papers": sum(d["count"] for d in nodes),
         "total_categories": len(cat_papers),
-        "total_domains": len(nodes),
     }
 
 
