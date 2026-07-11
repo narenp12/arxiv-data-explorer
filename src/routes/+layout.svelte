@@ -8,6 +8,7 @@
 	import favicon from "$lib/assets/favicon.svg";
 	import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 	import CommandPalette from "$lib/components/CommandPalette.svelte";
+	import UnifiedSearch from "$lib/components/UnifiedSearch.svelte";
 
 	let { children } = $props();
 
@@ -74,7 +75,7 @@
 		{/each}
 	</div>
 
-	<div class="flex-1"></div>
+	<UnifiedSearch />
 
 	<ThemeToggle />
 </nav>
