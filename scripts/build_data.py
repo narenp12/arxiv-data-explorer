@@ -443,8 +443,7 @@ def build_search_db(df: daft.DataFrame) -> dict:
 
     con.execute("""CREATE VIRTUAL TABLE papers_fts USING fts5(
         id, title, abstract, authors, categories,
-        tokenize='porter unicode61',
-        content=''
+        tokenize='porter unicode61'
     )""")
 
     batch_size = 5000
@@ -723,6 +722,115 @@ def build_embeddings(df: daft.DataFrame) -> dict:
     return {"total": total, "path": str(out_path), "elapsed_s": elapsed}
 
 
+def build_suggest_index(df, output_dir=None, author_ranking_path=None):
+    import gzip
+    import brotli
+    import unicodedata
+    import re
+
+    if output_dir is None:
+        output_dir = DATA_DIR / "search" / "suggest"
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if author_ranking_path is None:
+        author_ranking_path = DATA_DIR / "author_rankings.json"
+    author_rankings = {}
+    if author_ranking_path.exists():
+        rankings = json.loads(author_ranking_path.read_text())
+        for idx, entry in enumerate(rankings):
+            if isinstance(entry, dict):
+                author_rankings[entry.get("name", entry.get("author", ""))] = idx
+            else:
+                author_rankings[str(entry)] = idx
+
+    shard_data = {}
+    categories_set = {}
+
+    papers = df.to_pydict()
+    for i in range(len(papers["id"])):
+        raw = papers["title"][i] or ""
+        normalized = unicodedata.normalize("NFD", raw)
+        normalized = re.sub(r"[\u0300-\u036f]", "", normalized)
+        first_char = normalized[0].lower() if normalized else "other"
+        if not re.match(r"^[a-z]$", first_char):
+            first_char = "other"
+
+        if first_char not in shard_data:
+            shard_data[first_char] = {"t": [], "a": [], "a_seen": set()}
+
+        paper_id = papers["id"][i]
+        shard_data[first_char]["t"].append([raw, paper_id])
+
+        authors_field = papers["authors"][i]
+        if isinstance(authors_field, str):
+            author_names = [a.strip() for a in authors_field.split(",") if a.strip()]
+        elif isinstance(authors_field, list):
+            author_names = authors_field
+        else:
+            author_names = []
+        for author_name in author_names:
+            if author_name not in shard_data[first_char]["a_seen"]:
+                shard_data[first_char]["a_seen"].add(author_name)
+                rank_idx = author_rankings.get(author_name, -1)
+                shard_data[first_char]["a"].append([author_name, rank_idx])
+
+        for cat in (papers["categories"][i] or []):
+            categories_set[cat] = ""
+
+    categories_list = sorted(categories_set.keys())
+    cat_data = {"c": [[c, ""] for c in categories_list]}
+
+    import time
+    now = time.strftime("%Y-%m-%d")
+
+    shard_meta = {}
+    total_papers = 0
+
+    for letter in sorted(shard_data.keys()):
+        sd = shard_data[letter]
+        entry = {"t": sd["t"], "a": sd["a"]}
+        payload = json.dumps(entry, separators=(",", ":"), ensure_ascii=False)
+
+        with gzip.open(output_dir / f"{letter}.json.gz", "wt", encoding="utf-8") as f:
+            f.write(payload)
+
+        compressed = brotli.compress(payload.encode("utf-8"))
+        (output_dir / f"{letter}.json.br").write_bytes(compressed)
+
+        paper_count = len(sd["t"])
+        author_count = len(sd["a"])
+        shard_meta[letter] = {
+            "papers": paper_count,
+            "authors": author_count,
+            "size_bytes": len(payload.encode("utf-8")),
+        }
+        total_papers += paper_count
+
+    cat_payload = json.dumps(cat_data, separators=(",", ":"), ensure_ascii=False)
+    with gzip.open(output_dir / "categories.json.gz", "wt", encoding="utf-8") as f:
+        f.write(cat_payload)
+    cat_br = brotli.compress(cat_payload.encode("utf-8"))
+    (output_dir / "categories.json.br").write_bytes(cat_br)
+
+    meta = {
+        "version": 1,
+        "updated": now,
+        "total_papers": total_papers,
+        "shards": shard_meta,
+    }
+    (output_dir / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))
+
+    for letter in shard_data:
+        shard_data[letter].pop("a_seen", None)
+
+    return {
+        "total_papers": total_papers,
+        "shards": list(shard_data.keys()),
+        "categories": len(categories_list),
+    }
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Build arXiv explorer static data")
     parser.add_argument("--incremental", action="store_true", default=True,
@@ -777,7 +885,7 @@ if __name__ == "__main__":
     print("Building category hierarchy…")
     hierarchy = build_category_hierarchy(df)
     (DATA_DIR / "category_hierarchy.json").write_text(json.dumps(hierarchy, separators=(",", ":")))
-    print(f"  {hierarchy['total_domains']} domains, {hierarchy['total_categories']} categories")
+    print(f"  {len(hierarchy['domains'])} domains, {hierarchy['total_categories']} categories")
 
     print("Building category stats…")
     cat_stats = build_category_stats(df)
@@ -788,6 +896,11 @@ if __name__ == "__main__":
     ts = build_timeseries(df)
     (DATA_DIR / "timeseries.json").write_text(json.dumps(ts, separators=(",", ":")))
     print(f"  {len(ts):,} months of data")
+
+    print("Building suggest shards…")
+    suggest_stats = build_suggest_index(df)
+    print(f"  {suggest_stats['total_papers']:,} papers in {len(suggest_stats['shards'])} shards")
+    print(f"  {suggest_stats['categories']:,} categories")
 
     if args.fulltext:
         print("Building full-text index…")
