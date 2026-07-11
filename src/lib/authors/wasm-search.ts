@@ -3,6 +3,10 @@ import init, { init as wasmInit, search as wasmSearch, search_stats as wasmSearc
 let ready = false;
 let initError: string | null = null;
 
+export function isReady(): boolean {
+  return ready;
+}
+
 export async function loadAuthorSearch(): Promise<void> {
   if (ready) return;
   try {
