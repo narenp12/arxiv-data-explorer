@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { gzipSync } from "zlib";
+import { gzip } from "pako";
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -25,11 +25,11 @@ function metaResponse(): Response {
 }
 
 function gzipBytes(data: object): Uint8Array {
-  return gzipSync(Buffer.from(JSON.stringify(data), "utf-8"));
+  return gzip(JSON.stringify(data));
 }
 
 function mockGzipResponse(data: object): Response {
-  return new Response(gzipBytes(data), {
+  return new Response(gzipBytes(data) as BodyInit, {
     headers: { "content-type": "application/gzip" },
   });
 }

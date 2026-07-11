@@ -10,13 +10,8 @@ vi.mock("../../../static/wasm/arxwasm/arxwasm.js", () => ({
 import { loadAuthorSearch, getInitError, searchAuthors, getStats } from "./wasm-search.js";
 import * as arxwasm from "../../../static/wasm/arxwasm/arxwasm.js";
 
-function okResponse(text: string) {
-	return {
-		ok: true,
-		status: 200,
-		text: async () => text,
-		clone() { return this; },
-	};
+function okResponse(text: string): Response {
+	return new Response(text, { status: 200 });
 }
 
 const arxwasmDefault = vi.mocked(arxwasm.default);

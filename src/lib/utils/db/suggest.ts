@@ -1,4 +1,4 @@
-import FlexSearch from "flexsearch";
+import FlexSearch, { Document as FlexDocument } from "flexsearch";
 
 const SHARD_BASE = "/data/search/suggest";
 const LRU_MAX = 3;
@@ -54,7 +54,7 @@ async function loadCategories(): Promise<void> {
 
 export class SuggestShard {
   private letter: string = "";
-  private index: FlexSearch.Document<{ id: string; title: string }> | null = null;
+  private index: FlexDocument<{ id: string; title: string }> | null = null;
   private papers: Array<{ id: string; title: string }> = [];
   private authors: Array<{ name: string; rankIndex: number }> = [];
   private status: SuggestStatus = "loading";

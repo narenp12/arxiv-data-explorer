@@ -16,3 +16,14 @@ export function getProp<T>(obj: Record<string, unknown>, key: string, fallback: 
 	const val = obj[key];
 	return (val as T) ?? fallback;
 }
+
+export function scoreCategory(item: { label: string; id: string }, q: string): number {
+	const l = item.label.toLowerCase();
+	const i = item.id.toLowerCase();
+	const query = q.toLowerCase();
+	if (l === query || i === query) return 100;
+	if (l.startsWith(query) || i.startsWith(query)) return 80;
+	if (l.split(/\s+/).some(w => w.startsWith(query))) return 60;
+	if (l.includes(query) || i.includes(query)) return 40;
+	return 0;
+}

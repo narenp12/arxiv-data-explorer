@@ -2,6 +2,7 @@
 	import { goto } from "$app/navigation";
 	import { base } from "$app/paths";
 	import { searchPapers, type PaperResult } from "$lib/utils/db/search";
+	import { scoreCategory } from "$lib/utils/db";
 	import { loadAuthorSearch, searchAuthors, isReady } from "$lib/authors/wasm-search";
 
 	interface AuthorItem { name: string; papers: number; }
@@ -53,7 +54,7 @@
 				categories = flat;
 				concepts = flat.filter((c) => c.id.includes(".")).map((c) => ({ id: c.id, label: c.label }));
 			}
-		} catch { /* data unavailable */ }
+		} catch (err) { console.warn("Failed to load search data:", err); }
 	}
 
 	async function onFocus() {
@@ -65,8 +66,8 @@
 				await loadAuthorSearch();
 				wasmLoaded = true;
 				if (query.trim().length >= 2) doSearch();
-			} catch {
-				// fall back to includes() filtering
+			} catch (err) {
+				console.warn("WASM load failed, falling back to includes():", err);
 			}
 			wasmLoading = false;
 		}
@@ -108,7 +109,7 @@
 		const seq = ++requestSeq;
 		const q = query.trim().toLowerCase();
 
-		// Authors: WASM if ready, else includes() fallback
+		// Authors: WASM trigram gives fuzzy matching; fall back to substring when WASM not ready
 		if (isReady()) {
 			const wResults = searchAuthors(q, 5);
 			authorResults = wResults.map(r => ({ name: r.name, papers: r.weight }));
@@ -142,20 +143,9 @@
 			if (seq !== requestSeq) return;
 			paperResults = res.results;
 			paperTotal = res.total;
-		} catch { /* paper search unavailable */ }
+		} 		catch (err) { console.warn("Paper search failed:", err); }
 
 		searching = false;
-	}
-
-	function scoreCategory(item: { label: string; id: string }, q: string): number {
-		const l = item.label.toLowerCase();
-		const i = item.id.toLowerCase();
-		const query = q.toLowerCase();
-		if (l === query || i === query) return 100;
-		if (l.startsWith(query) || i.startsWith(query)) return 80;
-		if (l.split(/\s+/).some(w => w.startsWith(query))) return 60;
-		if (l.includes(query) || i.includes(query)) return 40;
-		return 0;
 	}
 
 	function go(href: string) {

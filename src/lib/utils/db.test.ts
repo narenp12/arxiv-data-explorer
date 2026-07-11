@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy, sanitiseYearRange, sanitiseMinCites, getCached, setCached, parseArxivTotal } from "./db/index.js";
+import { getProp, searchPapers, searchArxivCategory, getPaperDetail, arxivId, authorList, clearSearchCache, sanitiseFieldOfStudy, sanitiseYearRange, sanitiseMinCites, getCached, setCached, parseArxivTotal, scoreCategory } from "./db/index.js";
 
 vi.mock("../../../static/wasm/arxcheck/arxcheck.js", () => ({
 	default: async () => {},
@@ -34,6 +34,38 @@ describe("getProp", () => {
 	it("preserves false boolean values", () => {
 		const obj = { active: false };
 		expect(getProp(obj, "active", true)).toBe(false);
+	});
+});
+
+describe("scoreCategory", () => {
+	const item = { label: "Machine Learning", id: "cs.LG" };
+
+	it("returns 100 for exact match", () => {
+		expect(scoreCategory(item, "Machine Learning")).toBe(100);
+		expect(scoreCategory(item, "cs.lg")).toBe(100);
+	});
+
+	it("returns 80 when query is prefix", () => {
+		expect(scoreCategory(item, "Machine")).toBe(80);
+		expect(scoreCategory(item, "cs.")).toBe(80);
+	});
+
+	it("returns 60 when query starts a word", () => {
+		expect(scoreCategory(item, "Learn")).toBe(60);
+	});
+
+	it("returns 40 for substring match", () => {
+		expect(scoreCategory(item, "chine")).toBe(40);
+	});
+
+	it("returns 0 for no match", () => {
+		expect(scoreCategory(item, "Physics")).toBe(0);
+	});
+
+	it("is case-insensitive", () => {
+		expect(scoreCategory(item, "machine learning")).toBe(100);
+		expect(scoreCategory(item, "CS.LG")).toBe(100);
+		expect(scoreCategory(item, "LEARN")).toBe(60);
 	});
 });
 
