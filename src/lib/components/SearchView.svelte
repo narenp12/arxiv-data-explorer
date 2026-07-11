@@ -2,9 +2,13 @@
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { replaceState } from "$app/navigation";
-	import { searchPapers, searchArxivCategory, sanitiseYearRange, sanitiseFieldOfStudy, sanitiseMinCites, type PaperResult } from "$lib/utils/db";
+	import { searchPapers, searchArxiv, searchArxivCategory, sanitiseYearRange, sanitiseFieldOfStudy, sanitiseMinCites, type PaperResult } from "$lib/utils/db";
 	import PaperCard from "./PaperCard.svelte";
 	import SearchFilters from "./SearchFilters.svelte";
+	import SearchSuggest from "./SearchSuggest.svelte";
+
+	type Tab = "s2" | "arxiv";
+	let activeTab = $state<Tab>("s2");
 
 	let query = $state("");
 	let results: PaperResult[] = $state([]);
@@ -12,7 +16,6 @@
 	let offset = $state(0);
 	let searching = $state(false);
 	let error: string | null = $state(null);
-	let viaArxiv = $state(false);
 
 	let yearRange = $state("");
 	let fieldOfStudy = $state("");
@@ -22,6 +25,8 @@
 
 	onMount(() => {
 		const urlQuery = $page.url.searchParams.get("q");
+		const tabParam = $page.url.searchParams.get("source");
+		if (tabParam === "arxiv") activeTab = "arxiv";
 		const urlPage = Math.max(1, parseInt($page.url.searchParams.get("page") || "1", 10));
 		yearRange = sanitiseYearRange($page.url.searchParams.get("yr") || "");
 		fieldOfStudy = sanitiseFieldOfStudy($page.url.searchParams.get("fo") || "");
@@ -33,6 +38,13 @@
 				doSearch();
 			}
 		}
+		const handler = ((e: CustomEvent) => {
+			query = e.detail.query;
+			offset = 0;
+			doSearch();
+		}) as EventListener;
+		window.addEventListener("arxiv-search", handler);
+		return () => window.removeEventListener("arxiv-search", handler);
 	});
 
 	function syncUrl(q: string, off: number) {
@@ -43,9 +55,16 @@
 		if (yearRange) params.set("yr", yearRange);
 		if (fieldOfStudy) params.set("fo", fieldOfStudy);
 		if (minCites) params.set("mc", minCites);
+		if (activeTab === "arxiv") params.set("source", "arxiv");
 		const str = params.toString();
 		const url = str ? `?${str}` : window.location.pathname;
 		replaceState(url, {});
+	}
+
+	function switchTab(tab: Tab) {
+		activeTab = tab;
+		error = null;
+		if (results.length > 0) syncUrl(query, offset);
 	}
 
 	function onFilterChange(filters: { yearRange: string; fieldOfStudy: string; minCites: string }) {
@@ -79,23 +98,30 @@
 		error = null;
 		searching = true;
 		const seq = ++requestSeq;
-		const catMatch = query.trim().match(/^cat:(\S+)$/i);
 		try {
 			let res: { results: PaperResult[]; total: number };
-			if (catMatch) {
-				res = await searchArxivCategory(catMatch[1], { limit: LIMIT, offset });
+			if (activeTab === "arxiv") {
+				const catMatch = query.trim().match(/^cat:(\S+)$/i);
+				if (catMatch) {
+					res = await searchArxivCategory(catMatch[1], { limit: LIMIT, offset });
+				} else {
+					res = await searchArxiv(query, { limit: LIMIT, offset });
+				}
 				if (seq !== requestSeq) return;
-				viaArxiv = true;
 			} else {
-				res = await searchPapers(query, {
-					limit: LIMIT,
-					offset,
-					yearRange: yearRange || undefined,
-					fieldOfStudy: fieldOfStudy || undefined,
-					minCites: minCites || undefined,
-				});
+				const catMatch = query.trim().match(/^cat:(\S+)$/i);
+				if (catMatch) {
+					res = await searchArxivCategory(catMatch[1], { limit: LIMIT, offset });
+				} else {
+					res = await searchPapers(query, {
+						limit: LIMIT,
+						offset,
+						yearRange: yearRange || undefined,
+						fieldOfStudy: fieldOfStudy || undefined,
+						minCites: minCites || undefined,
+					});
+				}
 				if (seq !== requestSeq) return;
-				viaArxiv = false;
 			}
 			results = res.results;
 			total = res.total;
@@ -117,25 +143,53 @@
 </script>
 
 <div class="space-y-5">
-	<div class="relative">
-		<input
-			type="search"
-			placeholder="Search arXiv papers… (e.g. quantum computing)"
-			oninput={onInput}
-			onkeydown={(e) => e.key === "Enter" && doSearch()}
-			value={query}
-			class="w-full border-2 border-outline/30 bg-surface px-5 py-4 font-mono text-base text-on-surface transition-all placeholder:text-outline hover:border-outline/50 focus:border-primary focus:shadow-[0_0_20px_rgba(0,219,231,0.12)]"
-		/>
-			<button
-			onclick={() => doSearch()}
-			disabled={query.trim().length < 2 || searching}
-			class="absolute top-1/2 right-5 -translate-y-1/2 rounded bg-primary px-4 py-1.5 font-mono text-xs font-bold text-[#0a0a0a] transition-all hover:opacity-85 disabled:opacity-30 active:translate-y-px"
+	<div class="flex border-b border-outline/20">
+		<button
+			role="tab"
+			aria-selected={activeTab === "s2"}
+			onclick={() => switchTab("s2")}
+			class="px-5 py-2.5 font-mono text-xs transition-colors {activeTab === 's2' ? 'border-b-2 border-primary text-primary font-bold' : 'text-outline hover:text-on-surface-variant'}"
 		>
-			{searching ? "SEARCHING" : "SEARCH"}
+			Semantic Scholar
+		</button>
+		<button
+			role="tab"
+			aria-selected={activeTab === "arxiv"}
+			onclick={() => switchTab("arxiv")}
+			class="px-5 py-2.5 font-mono text-xs transition-colors {activeTab === 'arxiv' ? 'border-b-2 border-primary text-primary font-bold' : 'text-outline hover:text-on-surface-variant'}"
+		>
+			arXiv
 		</button>
 	</div>
 
-	<SearchFilters {yearRange} {fieldOfStudy} {minCites} onChange={onFilterChange} />
+	{#if activeTab === "arxiv"}
+		<SearchSuggest />
+		<div class="font-mono text-[10px] text-outline/60 -mt-3">
+			Auto-suggest from local paper index · Search via arXiv API
+		</div>
+	{:else}
+		<div class="relative">
+			<input
+				type="search"
+				placeholder="Search arXiv papers… (e.g. quantum computing)"
+				oninput={onInput}
+				onkeydown={(e) => e.key === "Enter" && doSearch()}
+				value={query}
+				class="w-full border-2 border-outline/30 bg-surface px-5 py-4 font-mono text-base text-on-surface transition-all placeholder:text-outline hover:border-outline/50 focus:border-primary focus:shadow-[0_0_20px_rgba(0,219,231,0.12)]"
+			/>
+			<button
+				onclick={() => doSearch()}
+				disabled={query.trim().length < 2 || searching}
+				class="absolute top-1/2 right-5 -translate-y-1/2 rounded bg-primary px-4 py-1.5 font-mono text-xs font-bold text-[#0a0a0a] transition-all hover:opacity-85 disabled:opacity-30 active:translate-y-px"
+			>
+				{searching ? "SEARCHING" : "SEARCH"}
+			</button>
+		</div>
+	{/if}
+
+	{#if activeTab === "s2"}
+		<SearchFilters {yearRange} {fieldOfStudy} {minCites} onChange={onFilterChange} />
+	{/if}
 
 	{#if error}
 		<div class="py-16 text-center font-mono text-sm text-warning-red">
@@ -161,7 +215,7 @@
 			<div class="font-mono text-xs text-on-surface-variant">
 				<span class="text-primary font-bold">{total.toLocaleString()}</span>
 				result{total !== 1 ? "s" : ""} · “{query}”
-				<span class="ml-2 text-outline">via {viaArxiv ? "arXiv" : "Semantic Scholar"}</span>
+				<span class="ml-2 text-outline">via {activeTab === "arxiv" ? "arXiv" : "Semantic Scholar"}</span>
 			</div>
 			{#if total > LIMIT}
 				<div class="label-caps">
