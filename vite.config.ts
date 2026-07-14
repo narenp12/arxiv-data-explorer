@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   server: {
+    fs: { allow: ["."] },
     // Mirrors the Cloudflare Pages Functions in functions/api/ — both APIs
     // must be same-origin because they lack usable CORS headers.
     proxy: {

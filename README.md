@@ -40,44 +40,98 @@ uv run python scripts/build_data.py --sample 10000 --fulltext --embeddings --ml
 | `--fulltext` | Compute | Download PDFs via httpx and extract text via PyMuPDF (concurrent, resumable) |
 | `--embeddings` | Compute | Generate 384-dim vectors via sentence-transformers (all-MiniLM-L6-v2), save FAISS index |
 | `--ml` | Compute | KMeans clustering with TF-IDF topic keywords + FAISS paper recommendations |
-| `--gpu` | Compute | Enable Daft GPU UDFs (for NVIDIA machines — sentence-transformers auto-detects CUDA) |
+| `--gpu` | Compute | Enable Daft GPU UDFs and CUDA acceleration (NVIDIA machines only). `sentence-transformers` auto-detects CUDA. |
 
 ### Output Files
 
 | File | Builder | Description |
 |------|---------|-------------|
-| `static/data/category_graph.json` | metadata | Category co-occurrence network (93 nodes, ~290 weighted edges) |
+| `static/data/category_graph.json` | metadata | Category co-occurrence network (~N nodes, weighted edges) |
 | `static/data/author_rankings.json` | metadata | Top 1000 authors by paper count |
 | `static/data/search.db` | metadata | SQLite FTS5 search index (id, title, abstract, authors, categories) |
-| `static/data/category_hierarchy.json` | metadata | Category taxonomy tree (27 domains, 93 categories) |
+| `static/data/category_hierarchy.json` | metadata | Category taxonomy tree (N domains, M categories) |
 | `static/data/category_stats.json` | metadata | Per-category paper counts with yearly breakdowns |
-| `static/data/timeseries.json` | metadata | Global paper count per month (164 months) |
+| `static/data/timeseries.json` | metadata | Global paper count per month |
 | `static/data/fulltext/papers.parquet` | fulltext | Extracted PDF text (id + fulltext) |
 | `static/data/embeddings/papers.parquet` | embeddings | 384-dim vectors (id + embedding array) |
 | `static/data/embeddings/faiss.index` | embeddings | FAISS IndexFlatIP for similarity search |
 | `static/data/topics.json` | ml | KMeans clusters with TF-IDF topic keywords |
 | `static/data/recommendations.json` | ml | Top-10 similar papers per paper |
 
-### Two-Machine Workflow
+### Two-Machine Workflow (3M Papers)
 
-Run metadata on MacBook, compute-heavy stages on a GPU box:
+Full pipeline for all ~3M papers. Run metadata on MacBook (fast), compute-heavy stages on a GPU box.
+
+#### GPU Box Setup (One-Time)
 
 ```bash
-# MacBook — metadata only
+# Clone and install deps on GPU machine
+git clone git@github.com:<your>/arxiv-data-explorer.git
+cd arxiv-data-explorer
+uv sync --python 3.12
+```
+
+Ensure GPU box has CUDA + `nvidia-smi` working. `sentence-transformers` auto-detects CUDA.
+
+#### Full 3M Paper Run
+
+```bash
+# 1. Commit changes (uncommitted work won't sync)
+git add -A && git commit -m "data: regenerate for 3M papers"
+
+# 2. MacBook — metadata only (categories, authors, search, suggests)
+#    Reads all shards from HuggingFace (~10 min, no GPU needed)
 uv run python scripts/build_data.py --no-incremental
 
-# Sync code and metadata to GPU box
+# 3. Push code + metadata to GPU box
 ./scripts/sync_data.sh push
 
-# GPU box — compute stages
-# (SSH in) uv run python scripts/build_data.py --fulltext --embeddings --ml
+# 4. SSH to GPU box, run compute stages
+cd ~/arxiv-data-explorer
+uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml --gpu
 
-# Sync artifacts back to MacBook
+# 5. Pull artifacts back to MacBook
 ./scripts/sync_data.sh pull
 
-# Or one command:
-./scripts/sync_data.sh full
+# 6. Build the static site (MacBook)
+npm run build
 ```
+
+> Estimated output for 3M papers: suggest shards ~200MB, embeddings ~4-6GB. search.db ~3GB (not served to frontend — local reference). Ensure sufficient disk on both machines.
+
+#### Sync Script
+
+`scripts/sync_data.sh` manages data transfer:
+
+```bash
+./scripts/sync_data.sh push     # git push + SSH checkout to GPU box
+./scripts/sync_data.sh pull     # rsync fulltext, embeddings, ML output back
+GPU_HOST=my-gpu ./scripts/sync_data.sh full  # push → run remotely → pull
+```
+
+Set `GPU_HOST` env var (default: `gpu-box`) to your GPU machine hostname.
+
+#### Running on GPU Box Standalone
+
+```bash
+uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml --gpu
+npm install && npm run build
+```
+
+The `--gpu` flag enables Daft GPU UDFs for accelerated processing on NVIDIA machines.
+
+### Deployment
+
+Deployed as a static site to Cloudflare Pages (uses `@sveltejs/adapter-static`). Cloudflare Pages Functions in `functions/api/` proxy arXiv, Semantic Scholar, and OpenAlex APIs to avoid CORS issues.
+
+```bash
+npm run build     # outputs to build/
+npx wrangler pages deploy build/
+```
+
+Or connect the GitHub repo to the Cloudflare Pages dashboard — auto-deploys on push.
+
+> **Size constraints:** Cloudflare Pages free plan has a 500MB asset limit. Suggest shards at 3M papers will be ~200MB, leaving ~300MB for the rest of the site. If you exceed the limit, host suggest shards on R2 or serve from a separate domain.
 
 ### Frontend Build
 

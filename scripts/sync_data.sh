@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Cross-machine sync for arXiv data pipeline
 # Usage:
-#   ./scripts/sync_data.sh push    # MacBook → GPU box (git + papers.parquet)
+#   ./scripts/sync_data.sh push    # MacBook → GPU box (git repo + metadata)
 #   ./scripts/sync_data.sh pull    # GPU box → MacBook (fulltext, embeddings, ML)
 #
 # Set GPU_HOST env var (default: gpu-box)
@@ -14,18 +14,33 @@ REMOTE_DIR="${GPU_HOST}:~/arxiv-data-explorer"
 case "${1:-help}" in
   push)
     echo "=== Syncing git and metadata to GPU box ==="
-    git push origin daft-pipeline
-    ssh "$GPU_HOST" "cd ~/arxiv-data-explorer && git fetch origin && git checkout daft-pipeline"
-    echo "Done. On GPU box, run: uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml"
+    git fetch origin main
+    behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+    ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+    if [ "$behind" -gt 0 ] && [ "$ahead" -gt 0 ]; then
+      echo "🔴 Local and remote have diverged ($behind behind, $ahead ahead)."
+      echo "   Fix with: git pull --rebase origin main && git push origin main"
+      exit 1
+    fi
+    if [ "$behind" -gt 0 ]; then
+      echo "🔴 Remote has $behind commits ahead. Pull first: git pull --rebase origin main"
+      exit 1
+    fi
+    git push origin main
+    ssh "$GPU_HOST" "cd ~/arxiv-data-explorer && git fetch origin && git checkout main"
+    echo "Done. On GPU box, run: uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml --gpu"
     ;;
   pull)
     echo "=== Syncing artifacts from GPU box ==="
-    rsync -avz --progress \
+    rsync -avz --progress --delete \
       "$REMOTE_DIR/static/data/fulltext/" \
       "static/data/fulltext/"
-    rsync -avz --progress \
+    rsync -avz --progress --delete \
       "$REMOTE_DIR/static/data/embeddings/" \
       "static/data/embeddings/"
+    rsync -avz --progress \
+      "$REMOTE_DIR/static/data/search/" \
+      "static/data/search/"
     rsync -avz --progress \
       "$REMOTE_DIR/static/data/topics.json" \
       "static/data/topics.json"
@@ -38,7 +53,7 @@ case "${1:-help}" in
     echo "=== Full pipeline on GPU box ==="
     "$0" push
     ssh "$GPU_HOST" "cd ~/arxiv-data-explorer && \
-      uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml"
+      uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml --gpu"
     "$0" pull
     echo "Full pipeline complete."
     ;;
