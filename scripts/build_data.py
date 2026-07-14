@@ -670,12 +670,21 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
 
 
 def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
-    """Generate and store embeddings for all papers (fulltext → abstract fallback)."""
+    """Generate and store embeddings for all papers (fulltext -> abstract fallback).
+
+    Chunked processing: iterates Daft partitions, encodes with FP16 GPU,
+    writes to .npy memmap, saves checkpoint for crash-resume.
+    """
+    import gc
+    import json
+
     from sentence_transformers import SentenceTransformer
 
     embed_dir = DATA_DIR / "embeddings"
     embed_dir.mkdir(parents=True, exist_ok=True)
-    out_path = embed_dir / "papers.parquet"
+    vectors_path = embed_dir / "vectors.npy"
+    ids_path = embed_dir / "ids.jsonl"
+    checkpoint_path = embed_dir / "checkpoint.json"
 
     fulltext_path = DATA_DIR / "fulltext" / "papers.parquet"
     if fulltext_path.exists():
@@ -685,55 +694,109 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
         print("  Using abstracts as text source (no fulltext available)")
         texts = df.select(c("id"), c("abstract"))
 
-    pdf = texts.to_pandas()
-    pdf.columns = ["id", "text"]
-    pdf["text"] = pdf["text"].fillna("").astype(str)
+    total = texts.count_rows()
+    print(f"  Total papers: {total:,}")
 
+    # Load model - FP16 on GPU to halve memory
     model = SentenceTransformer("all-MiniLM-L6-v2")
     if use_gpu:
-        model = model.to("cuda")
+        model = model.half().to("cuda")
     print(f"  Model loaded on {model.device}")
 
-    batch_size = 512
-    total = len(pdf)
-    all_embeddings = np.zeros((total, 384), dtype=np.float32)
+    # Resume from checkpoint if exists
+    done_ids = set()
+    if checkpoint_path.exists():
+        try:
+            ckpt = json.loads(checkpoint_path.read_text())
+            done_ids = set(ckpt.get("done_ids", []))
+            print(f"  Resuming from checkpoint: {len(done_ids):,} already processed")
+        except (json.JSONDecodeError, KeyError):
+            print("  Checkpoint corrupt, starting fresh")
 
+    batch_size = 32
+    vectors_mmap = None
+    processed = 0
+    written = 0
     t0 = time.time()
-    for start in range(0, total, batch_size):
-        end = min(start + batch_size, total)
-        batch_texts = pdf["text"].iloc[start:end].tolist()
-        batch_emb = model.encode(batch_texts, show_progress_bar=False)
-        all_embeddings[start:end] = batch_emb.astype(np.float32)
 
-        if (start + batch_size) % 5000 == 0 or end == total:
-            elapsed = time.time() - t0
-            rate = end / elapsed if elapsed > 0 else 0
-            print(f"  {end:,}/{total:,} — {rate:.0f} papers/sec")
+    for chunk_idx, partition in enumerate(texts.iter_partitions()):
+        pdf = partition.to_pandas()
+        pdf.columns = ["id", "text"]
+        pdf["text"] = pdf["text"].fillna("").astype(str)
 
-    out_df = daft.from_pydict({
-        "id": pdf["id"].tolist(),
-        "embedding": [v.tolist() for v in all_embeddings],
-    })
-    out_df.write_parquet(str(out_path))
+        # Filter out already-done IDs
+        mask = ~pdf["id"].isin(done_ids)
+        chunk = pdf[mask]
+        if len(chunk) == 0:
+            continue
+
+        n = len(chunk)
+        chunk_vecs = np.zeros((n, 384), dtype=np.float32)
+        chunk_ids = chunk["id"].tolist()
+
+        # Encode in micro-batches to keep GPU memory low
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            batch_texts = chunk["text"].iloc[start:end].tolist()
+            batch_emb = model.encode(batch_texts, show_progress_bar=False)
+            if hasattr(batch_emb, 'cpu'):
+                batch_emb = batch_emb.cpu().float().numpy()
+            chunk_vecs[start:end] = batch_emb.astype(np.float32)
+
+        # Free GPU memory for next chunk
+        if use_gpu:
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        # Lazily create memmap with final total size on first write
+        if vectors_mmap is None:
+            vectors_mmap = np.lib.format.open_memmap(
+                str(vectors_path), mode="w+", dtype=np.float32, shape=(total, 384)
+            )
+
+        vectors_mmap[written:written + n] = chunk_vecs
+        vectors_mmap.flush()
+
+        # Append IDs as JSONL (stream-friendly)
+        with open(str(ids_path), "a") as f:
+            for pid in chunk_ids:
+                f.write(json.dumps({"id": pid}) + "\n")
+
+        processed += n
+        written += n
+
+        # Checkpoint every chunk for crash-resume
+        done_ids.update(chunk_ids)
+        checkpoint_path.write_text(json.dumps({"done_ids": list(done_ids)}))
+
+        elapsed = time.time() - t0
+        rate = processed / elapsed if elapsed > 0 else 0
+        eta = (total - written) / rate if rate > 0 else 0
+        print(f"  {processed:,}/{total:,} - {rate:.0f}/sec, ETA {eta:.0f}s")
+
+    if vectors_mmap is not None:
+        vectors_mmap.flush()
+
     elapsed = time.time() - t0
-    print(f"  Done: {total:,} embeddings in {elapsed:.1f}s ({total/elapsed:.0f}/sec)")
+    print(f"  Done: {processed:,} embeddings in {elapsed:.1f}s ({processed/elapsed:.0f}/sec)")
 
+    if processed == 0:
+        return {"total": 0, "vectors_path": str(vectors_path), "elapsed_s": elapsed}
+
+    # Build FAISS index from memmap (CPU, never loads all into GPU VRAM)
     try:
         import faiss
+        print("  Building FAISS index from memmap...")
+        vectors = np.lib.format.open_memmap(str(vectors_path), mode="r")
+        faiss.normalize_L2(vectors)
         cpu_index = faiss.IndexFlatIP(384)
-        if use_gpu:
-            res = faiss.StandardGpuResources()
-            index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-            index.add(all_embeddings)
-            cpu_index = faiss.index_gpu_to_cpu(index)
-        else:
-            cpu_index.add(all_embeddings)
+        cpu_index.add(vectors)
         faiss.write_index(cpu_index, str(embed_dir / "faiss.index"))
         print(f"  FAISS index built: {cpu_index.ntotal:,} vectors")
     except ImportError:
         print("  FAISS not available, skipping index build")
 
-    return {"total": total, "path": str(out_path), "elapsed_s": elapsed}
+    return {"total": processed, "vectors_path": str(vectors_path), "elapsed_s": elapsed}
 
 
 def build_suggest_index(df, output_dir=None, author_ranking_path=None):
