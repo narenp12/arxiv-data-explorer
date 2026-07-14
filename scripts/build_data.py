@@ -90,7 +90,7 @@ def load_shards(incremental: bool = True, sample: int = 0) -> daft.DataFrame:
 
     if sample:
         papers_per_shard = 7200
-        n_shards = max(50, sample // papers_per_shard)
+        n_shards = max(1, sample // papers_per_shard)
         shard_files = shard_files[:n_shards]
         print(f"Using {len(shard_files)} shards for sample of ~{sample:,}")
 
@@ -568,7 +568,7 @@ def build_fulltext(df: daft.DataFrame, limit: int = 0) -> dict:
     return {"processed": total_processed, "total": total, "path": str(out_path), "elapsed_s": elapsed}
 
 
-def build_ml(df: daft.DataFrame) -> dict:
+def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     """Run topic clustering and build paper recommendations."""
     from sentence_transformers import SentenceTransformer
     from sklearn.cluster import KMeans
@@ -625,11 +625,17 @@ def build_ml(df: daft.DataFrame) -> dict:
         topic_keywords = {i: [] for i in range(n_clusters)}
 
     print("  Building recommendations via FAISS…")
-    index = faiss.IndexFlatIP(384)
+    cpu_index = faiss.IndexFlatIP(384)
     faiss.normalize_L2(vectors)
-    index.add(vectors)
+    if use_gpu:
+        res = faiss.StandardGpuResources()
+        index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+        index.add(vectors)
+        cpu_index = faiss.index_gpu_to_cpu(index)
+    else:
+        cpu_index.add(vectors)
     k = min(11, n)
-    distances, indices = index.search(vectors, k)
+    distances, indices = cpu_index.search(vectors, k)
 
     recs = {}
     for i, pid in enumerate(paper_ids):
@@ -663,7 +669,7 @@ def build_ml(df: daft.DataFrame) -> dict:
     return {"topics": len(topics_out), "recommendations": len(recs), "total_papers": n}
 
 
-def build_embeddings(df: daft.DataFrame) -> dict:
+def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     """Generate and store embeddings for all papers (fulltext → abstract fallback)."""
     from sentence_transformers import SentenceTransformer
 
@@ -684,6 +690,8 @@ def build_embeddings(df: daft.DataFrame) -> dict:
     pdf["text"] = pdf["text"].fillna("").astype(str)
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
+    if use_gpu:
+        model = model.to("cuda")
     print(f"  Model loaded on {model.device}")
 
     batch_size = 512
@@ -712,10 +720,16 @@ def build_embeddings(df: daft.DataFrame) -> dict:
 
     try:
         import faiss
-        index = faiss.IndexFlatIP(384)
-        index.add(all_embeddings)
-        faiss.write_index(index, str(embed_dir / "faiss.index"))
-        print(f"  FAISS index built: {index.ntotal:,} vectors")
+        cpu_index = faiss.IndexFlatIP(384)
+        if use_gpu:
+            res = faiss.StandardGpuResources()
+            index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+            index.add(all_embeddings)
+            cpu_index = faiss.index_gpu_to_cpu(index)
+        else:
+            cpu_index.add(all_embeddings)
+        faiss.write_index(cpu_index, str(embed_dir / "faiss.index"))
+        print(f"  FAISS index built: {cpu_index.ntotal:,} vectors")
     except ImportError:
         print("  FAISS not available, skipping index build")
 
@@ -848,7 +862,7 @@ def parse_args():
     parser.add_argument("--ml", action="store_true", default=False,
                         help="Run ML pipeline (topic clustering + recommendations)")
     parser.add_argument("--gpu", action="store_true", default=False,
-                        help="Enable Daft GPU UDFs (for NVIDIA GPU machines)")
+                        help="Enable GPU acceleration for embeddings and FAISS indexing (requires CUDA-capable GPU)")
     return parser.parse_args()
 
 
@@ -909,12 +923,12 @@ if __name__ == "__main__":
 
     if args.embeddings:
         print("Generating paper embeddings…")
-        emb_stats = build_embeddings(df)
+        emb_stats = build_embeddings(df, use_gpu=args.gpu)
         print(f"  {emb_stats['total']:,} embeddings in {emb_stats['elapsed_s']:.1f}s")
 
     if args.ml:
         print("Running ML pipeline…")
-        ml_stats = build_ml(df)
+        ml_stats = build_ml(df, use_gpu=args.gpu)
         if "error" in ml_stats:
             print(f"  Error: {ml_stats['error']}")
         else:

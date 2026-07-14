@@ -34,7 +34,7 @@ uv run python scripts/build_data.py --sample 10000 --fulltext --embeddings --ml
 
 | Flag | Phase | Description |
 |------|-------|-------------|
-| `--sample N` | — | Process ~N papers (reads ~N/7200 shards). Omit for all 2.99M. |
+| `--sample N` | — | Process a sample of approximately N papers (minimum 1 shard). Omit for all 2.99M. |
 | `--no-incremental` | — | Force full rebuild (skip checkpoint cache) |
 | *(no flag)* | Metadata | Runs all metadata builders: category graph, author graph, author rankings, FTS5 search DB, category hierarchy, category stats, timeseries |
 | `--fulltext` | Compute | Download PDFs via httpx and extract text via PyMuPDF (concurrent, resumable) |
@@ -119,6 +119,34 @@ npm install && npm run build
 ```
 
 The `--gpu` flag enables Daft GPU UDFs for accelerated processing on NVIDIA machines.
+
+### Single-Machine Run (GPU Laptop)
+
+Run entire pipeline on one GPU laptop — no sync needed. NVIDIA GPU + CUDA required for `--gpu` flag.
+
+```bash
+# Install everything
+uv sync --python 3.12
+npm install
+
+# Metadata + fulltext + embeddings + ML, all locally
+uv run python scripts/build_data.py --no-incremental --fulltext --embeddings --ml --gpu
+
+# Build static site
+npm run build
+```
+
+**System requirements:**
+
+- **GPU VRAM:** Laptop GPUs 4-8 GB. Full 3M paper embeddings (~4-6 GB output) may OOM on 4 GB. Use `--sample N` to reduce scope.
+- **RAM:** Metadata-only uses ~4 GB; full pipeline with large sample may exceed 8 GB.
+- **Disk:** Embeddings 4-6 GB + search.db ~3 GB + suggest shards ~200 MB + HF dataset cache. Ensure ~10 GB free.
+- **CUDA:** CUDA 11.8+ / 12.x required for `--gpu`. `nvidia-smi` must list your GPU.
+- **Node.js:** Version 18+ required for SvelteKit 5 build.
+
+Metadata-only runs (~10 min, no GPU needed) by omitting `--fulltext`, `--embeddings`, and `--ml`.
+
+---
 
 ### Deployment
 
