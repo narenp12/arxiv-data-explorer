@@ -66,7 +66,7 @@ Full pipeline for all ~3M papers. Run metadata on MacBook (fast), compute-heavy 
 
 ```bash
 # Clone and install deps on GPU machine
-git clone git@github.com:<your>/arxiv-data-explorer.git
+git clone git@github.com:narenp12/arxiv-data-explorer.git
 cd arxiv-data-explorer
 uv sync --python 3.12
 ```
