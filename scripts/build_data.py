@@ -642,7 +642,7 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     bs = 100_000
     for start in range(0, n, bs):
         end = min(start + bs, n)
-        chunk = np.array(vectors[start:end], dtype=np.float32, copy=False)
+        chunk = vectors[start:end].copy()
         faiss.normalize_L2(chunk)
         cpu_index.add(chunk)
     k = min(11, n)
@@ -650,7 +650,7 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     indices = np.zeros((n, k), dtype=np.int64)
     for start in range(0, n, bs):
         end = min(start + bs, n)
-        chunk = np.array(vectors[start:end], dtype=np.float32, copy=False)
+        chunk = vectors[start:end]
         d, i = cpu_index.search(chunk, k)
         distances[start:end] = d
         indices[start:end] = i
@@ -689,14 +689,12 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
 
 def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     """Generate and store embeddings for all papers (fulltext -> abstract fallback).
-
-    import os
-    import torch
     Chunked processing: iterates Daft partitions, encodes with FP16 GPU,
     writes to .npy memmap, saves checkpoint for crash-resume.
     """
     import gc
     import json
+    import torch
 
     from sentence_transformers import SentenceTransformer
 
@@ -718,10 +716,11 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     print(f"  Total papers: {total:,}")
 
     # Load model - FP16 on GPU to halve memory
-    model = SentenceTransformer("all-MiniLM-L6-v2")
     if use_gpu:
-        os.environ["DAFT_RUNNER"] = "py"
         model = SentenceTransformer("all-MiniLM-L6-v2").half().to("cuda")
+    else:
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+    print(f"  Model loaded on {model.device}")
 
     # Resume from checkpoint if exists
     done_ids = set()
@@ -736,7 +735,7 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     batch_size = 32
     vectors_mmap = None
     processed = 0
-    written = 0
+    last_ckpt = 0
     t0 = time.time()
 
     for chunk_idx, partition in enumerate(texts.iter_partitions()):
@@ -751,17 +750,13 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
             continue
 
         n = len(chunk)
-        chunk_vecs = np.zeros((n, 384), dtype=np.float32)
         chunk_ids = chunk["id"].tolist()
 
-        # Encode in micro-batches to keep GPU memory low
-        for start in range(0, n, batch_size):
-            end = min(start + batch_size, n)
-            batch_texts = chunk["text"].iloc[start:end].tolist()
-            batch_emb = model.encode(batch_texts, show_progress_bar=False)
-            if hasattr(batch_emb, 'cpu'):
-                batch_emb = batch_emb.cpu().float().numpy()
-            chunk_vecs[start:end] = batch_emb.astype(np.float32)
+        with torch.no_grad():
+            chunk_vecs = model.encode(chunk["text"].tolist(), batch_size=batch_size, show_progress_bar=False)
+        if hasattr(chunk_vecs, 'cpu'):
+            chunk_vecs = chunk_vecs.cpu().float().numpy()
+        chunk_vecs = chunk_vecs.astype(np.float32)
 
         # Free GPU memory for next chunk
         if use_gpu:
@@ -774,7 +769,7 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
                 str(vectors_path), mode="w+", dtype=np.float32, shape=(total, 384)
             )
 
-        vectors_mmap[written:written + n] = chunk_vecs
+        vectors_mmap[processed:processed + n] = chunk_vecs
         vectors_mmap.flush()
 
         # Append IDs as JSONL (stream-friendly)
@@ -783,15 +778,16 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
                 f.write(json.dumps({"id": pid}) + "\n")
 
         processed += n
-        written += n
-
-        # Checkpoint every chunk for crash-resume
         done_ids.update(chunk_ids)
-        checkpoint_path.write_text(json.dumps({"done_ids": list(done_ids)}))
+
+        # Checkpoint every 100K new papers (avoid serializing huge set each chunk)
+        if processed - last_ckpt >= 100_000:
+            checkpoint_path.write_text(json.dumps({"done_ids": list(done_ids)}))
+            last_ckpt = processed
 
         elapsed = time.time() - t0
         rate = processed / elapsed if elapsed > 0 else 0
-        eta = (total - written) / rate if rate > 0 else 0
+        eta = (total - processed) / rate if rate > 0 else 0
         print(f"  {processed:,}/{total:,} - {rate:.0f}/sec, ETA {eta:.0f}s")
 
     if vectors_mmap is not None:
@@ -799,22 +795,6 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
 
     elapsed = time.time() - t0
     print(f"  Done: {processed:,} embeddings in {elapsed:.1f}s ({processed/elapsed:.0f}/sec)")
-
-    if processed == 0:
-        return {"total": 0, "vectors_path": str(vectors_path), "elapsed_s": elapsed}
-
-    # Build FAISS index from memmap (CPU, never loads all into GPU VRAM)
-    try:
-        import faiss
-        print("  Building FAISS index from memmap...")
-        vectors = np.lib.format.open_memmap(str(vectors_path), mode="r")
-        faiss.normalize_L2(vectors)
-        cpu_index = faiss.IndexFlatIP(384)
-        cpu_index.add(vectors)
-        faiss.write_index(cpu_index, str(embed_dir / "faiss.index"))
-        print(f"  FAISS index built: {cpu_index.ntotal:,} vectors")
-    except ImportError:
-        print("  FAISS not available, skipping index build")
 
     return {"total": processed, "vectors_path": str(vectors_path), "elapsed_s": elapsed}
 
@@ -955,6 +935,7 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    os.environ["DAFT_RUNNER"] = "native"
     df = load_shards(incremental=args.incremental, sample=args.sample)
 
     if df is None:

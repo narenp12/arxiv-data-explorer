@@ -20,7 +20,10 @@ export function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
 	}
 }
 
+import { resetRateLimitState } from './rate-limit';
+
 export function clearSearchCache() {
+	resetRateLimitState();
 	searchCache.clear();
 	detailCache.clear();
 }

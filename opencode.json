@@ -10,13 +10,16 @@
 			"type": "local",
 			"command": [
 				"node",
-				"/Users/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/mcp-server/dist/index.js"
+				"/home/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/mcp-server/dist/index.js"
 			],
 			"enabled": true,
 			"env": {
-				"CC_POLYMATH_SKILLS_DIR": "/Users/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/skills"
+				"CC_POLYMATH_SKILLS_DIR": "/home/narenprax/.claude/plugins/marketplaces/cc-polymath-marketplace/skills"
 			}
 		}
 	},
-	"instructions": ["AGENTS.md", "CLAUDE.md"]
+	"instructions": ["AGENTS.md", "CLAUDE.md"],
+	"plugin": [
+		"superpowers@git+https://github.com/obra/superpowers.git"
+	]
 }

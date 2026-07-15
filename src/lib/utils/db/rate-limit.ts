@@ -3,7 +3,7 @@ let lastRequest = 0;
 let requestQueue: Promise<void> = Promise.resolve();
 const inFlight = new Map<string, Promise<Response>>();
 
-function resetRateLimitState() {
+export function resetRateLimitState() {
 	lastRequest = 0;
 	requestQueue = Promise.resolve();
 	inFlight.clear();
