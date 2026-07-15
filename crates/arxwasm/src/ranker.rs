@@ -4,9 +4,8 @@ use crate::data::Author;
 pub fn rank_candidates(authors: &[Author], indices: &[usize], query: &str) -> Vec<usize> {
     let query_lower = query.to_ascii_lowercase();
 
-    let tier_score = |author: &Author| -> f64 {
-        author.weight as f64 * (1.0 + author.coauthors.len() as f64)
-    };
+    let tier_score =
+        |author: &Author| -> f64 { author.weight as f64 * (1.0 + author.coauthors.len() as f64) };
 
     let mut exact: Vec<usize> = Vec::new();
     let mut fuzzy: Vec<usize> = Vec::new();

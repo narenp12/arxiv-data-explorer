@@ -1,8 +1,8 @@
+use crate::{Check, CheckViolation};
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
-use crate::{Check, CheckViolation};
-use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct CategoryGraph {
@@ -24,7 +24,9 @@ struct GraphEdge {
 pub struct GraphCheck;
 
 impl Check for GraphCheck {
-    fn name(&self) -> &'static str { "graph" }
+    fn name(&self) -> &'static str {
+        "graph"
+    }
 
     fn run(&self, data_dir: &str) -> Vec<CheckViolation> {
         let mut violations = Vec::new();
@@ -93,7 +95,7 @@ impl Check for GraphCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
@@ -105,30 +107,46 @@ mod tests {
 
     #[test]
     fn test_valid_graph() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_valid_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("arxcheck_test_graph_valid_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
-        write_json(&dir, "category_graph.json", &serde_json::json!({
-            "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
-            "edges": [{"source": "cs.AI", "target": "cs.LG"}]
-        }));
+        write_json(
+            &dir,
+            "category_graph.json",
+            &serde_json::json!({
+                "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
+                "edges": [{"source": "cs.AI", "target": "cs.LG"}]
+            }),
+        );
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.is_empty(), "expected no violations, got: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "expected no violations, got: {:?}",
+            violations
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_graph_empty_node_id() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_empty_node_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_graph_empty_node_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
 
-        write_json(&dir, "category_graph.json", &serde_json::json!({
-            "nodes": [{"id": ""}, {"id": "cs.LG"}],
-            "edges": [{"source": "", "target": "cs.LG"}]
-        }));
+        write_json(
+            &dir,
+            "category_graph.json",
+            &serde_json::json!({
+                "nodes": [{"id": ""}, {"id": "cs.LG"}],
+                "edges": [{"source": "", "target": "cs.LG"}]
+            }),
+        );
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
@@ -139,16 +157,23 @@ mod tests {
 
     #[test]
     fn test_graph_duplicate_edges() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_dup_edge_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_graph_dup_edge_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
 
-        write_json(&dir, "category_graph.json", &serde_json::json!({
-            "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
-            "edges": [
-                {"source": "cs.AI", "target": "cs.LG"},
-                {"source": "cs.AI", "target": "cs.LG"}
-            ]
-        }));
+        write_json(
+            &dir,
+            "category_graph.json",
+            &serde_json::json!({
+                "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
+                "edges": [
+                    {"source": "cs.AI", "target": "cs.LG"},
+                    {"source": "cs.AI", "target": "cs.LG"}
+                ]
+            }),
+        );
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
@@ -159,13 +184,20 @@ mod tests {
 
     #[test]
     fn test_graph_missing_edge_target() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_missing_target_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_graph_missing_target_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
 
-        write_json(&dir, "category_graph.json", &serde_json::json!({
-            "nodes": [{"id": "cs.AI"}],
-            "edges": [{"source": "cs.AI", "target": "MISSING"}]
-        }));
+        write_json(
+            &dir,
+            "category_graph.json",
+            &serde_json::json!({
+                "nodes": [{"id": "cs.AI"}],
+                "edges": [{"source": "cs.AI", "target": "MISSING"}]
+            }),
+        );
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
@@ -176,7 +208,10 @@ mod tests {
 
     #[test]
     fn test_graph_missing_file() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_missing_file_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_graph_missing_file_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
 
         let check = GraphCheck;

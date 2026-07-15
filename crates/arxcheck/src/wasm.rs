@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use crate::checks::api_contract;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub fn validate_paper_result_json(json: &str) -> JsValue {

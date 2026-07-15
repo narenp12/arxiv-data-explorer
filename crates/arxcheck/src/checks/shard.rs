@@ -1,8 +1,8 @@
-use std::fs;
-use std::collections::HashSet;
-use std::path::Path;
 use crate::{Check, CheckViolation};
 use serde::Deserialize;
+use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -14,7 +14,9 @@ struct ShardEntry {
 pub struct ShardCheck;
 
 impl Check for ShardCheck {
-    fn name(&self) -> &'static str { "shard" }
+    fn name(&self) -> &'static str {
+        "shard"
+    }
 
     fn run(&self, data_dir: &str) -> Vec<CheckViolation> {
         let mut violations = Vec::new();
@@ -35,7 +37,9 @@ impl Check for ShardCheck {
         for entry in entries.flatten() {
             let path = entry.path();
             let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !fname.starts_with("shard-") || path.extension().and_then(|s| s.to_str()) != Some("json") {
+            if !fname.starts_with("shard-")
+                || path.extension().and_then(|s| s.to_str()) != Some("json")
+            {
                 continue;
             }
             let content = match fs::read_to_string(&path) {
@@ -84,7 +88,7 @@ impl Check for ShardCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
@@ -96,25 +100,37 @@ mod tests {
 
     #[test]
     fn test_valid_shard() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_shard_valid_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("arxcheck_test_shard_valid_{}", std::process::id()));
         let authors_dir = dir.join("authors");
         std::fs::create_dir_all(&authors_dir).unwrap();
 
-        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
-            "Alice": {"w": 5, "co": [["Bob", {}]]},
-            "Bob": {"w": 3, "co": [["Alice", {}]]}
-        }));
+        write_json(
+            &authors_dir,
+            "shard-0.json",
+            &serde_json::json!({
+                "Alice": {"w": 5, "co": [["Bob", {}]]},
+                "Bob": {"w": 3, "co": [["Alice", {}]]}
+            }),
+        );
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.is_empty(), "expected no violations, got: {:?}", violations);
+        assert!(
+            violations.is_empty(),
+            "expected no violations, got: {:?}",
+            violations
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_shard_corrupt_json() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_shard_corrupt_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_shard_corrupt_{}",
+            std::process::id()
+        ));
         let authors_dir = dir.join("authors");
         std::fs::create_dir_all(&authors_dir).unwrap();
 
@@ -124,23 +140,36 @@ mod tests {
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("invalid JSON")));
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.message.contains("invalid JSON"))
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_shard_duplicate_author() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_shard_dup_{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("arxcheck_test_shard_dup_{}", std::process::id()));
         let authors_dir = dir.join("authors");
         std::fs::create_dir_all(&authors_dir).unwrap();
 
-        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
-            "Alice": {"w": 5, "co": []}
-        }));
-        write_json(&authors_dir, "shard-1.json", &serde_json::json!({
-            "Alice": {"w": 3, "co": []}
-        }));
+        write_json(
+            &authors_dir,
+            "shard-0.json",
+            &serde_json::json!({
+                "Alice": {"w": 5, "co": []}
+            }),
+        );
+        write_json(
+            &authors_dir,
+            "shard-1.json",
+            &serde_json::json!({
+                "Alice": {"w": 3, "co": []}
+            }),
+        );
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
@@ -151,29 +180,47 @@ mod tests {
 
     #[test]
     fn test_shard_empty_coauthor() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_shard_empty_co_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_shard_empty_co_{}",
+            std::process::id()
+        ));
         let authors_dir = dir.join("authors");
         std::fs::create_dir_all(&authors_dir).unwrap();
 
-        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
-            "Alice": {"w": 5, "co": [["", {}]]}
-        }));
+        write_json(
+            &authors_dir,
+            "shard-0.json",
+            &serde_json::json!({
+                "Alice": {"w": 5, "co": [["", {}]]}
+            }),
+        );
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("empty co-author")));
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.message.contains("empty co-author"))
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn test_shard_missing_authors_dir() {
-        let dir = std::env::temp_dir().join(format!("arxcheck_test_shard_missing_dir_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "arxcheck_test_shard_missing_dir_{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("cannot read directory")));
+        assert!(
+            violations
+                .iter()
+                .any(|v| v.message.contains("cannot read directory"))
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

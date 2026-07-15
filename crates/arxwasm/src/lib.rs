@@ -1,14 +1,14 @@
 mod data;
 mod normalize;
+mod ranker;
 mod trie;
 mod trigram;
-mod ranker;
 
 use data::AuthorStore;
 use normalize::{normalize, normalize_for_search};
+use std::sync::OnceLock;
 use trie::AuthorTrie;
 use trigram::TrigramIndex;
-use std::sync::OnceLock;
 use wasm_bindgen::prelude::*;
 
 static STORE: OnceLock<AppState> = OnceLock::new();
@@ -37,7 +37,12 @@ pub fn init(shards_json: &str, rankings_json: &str) -> Result<(), JsValue> {
         trigram.insert(&n, i);
     }
 
-    STORE.set(AppState { store, trie, trigram })
+    STORE
+        .set(AppState {
+            store,
+            trie,
+            trigram,
+        })
         .map_err(|_| JsValue::from_str("init already called"))
 }
 
@@ -49,7 +54,8 @@ pub fn search(query: &str, max_results: u32) -> JsValue {
 
     let q = normalize_for_search(query);
     if q.is_empty() {
-        return serde_wasm_bindgen::to_value(&[] as &[serde_json::Value]).unwrap_or(JsValue::UNDEFINED);
+        return serde_wasm_bindgen::to_value(&[] as &[serde_json::Value])
+            .unwrap_or(JsValue::UNDEFINED);
     }
 
     let mut candidates = state.trie.search(&q);
@@ -86,7 +92,12 @@ pub fn search_stats() -> JsValue {
         return JsValue::UNDEFINED;
     };
     let total = state.store.authors.len();
-    let with_ranks = state.store.authors.iter().filter(|a| a.rank.is_some()).count();
+    let with_ranks = state
+        .store
+        .authors
+        .iter()
+        .filter(|a| a.rank.is_some())
+        .count();
     serde_wasm_bindgen::to_value(&serde_json::json!({
         "total_authors": total,
         "with_rankings": with_ranks,

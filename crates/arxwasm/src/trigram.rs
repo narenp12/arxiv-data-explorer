@@ -24,7 +24,10 @@ impl TrigramIndex {
         let grams = trigrams(normalized);
         let total = grams.len() as u32;
         for g in &grams {
-            self.posting.entry(g.clone()).or_default().push((author_idx, total));
+            self.posting
+                .entry(g.clone())
+                .or_default()
+                .push((author_idx, total));
         }
     }
 

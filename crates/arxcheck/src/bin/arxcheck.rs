@@ -1,9 +1,12 @@
-use std::process;
+use arxcheck::{Check, Severity, checks};
 use clap::Parser;
-use arxcheck::{checks, Check, Severity};
+use std::process;
 
 #[derive(Parser)]
-#[command(name = "arxcheck", about = "Validate arxiv-data-explorer JSON data files")]
+#[command(
+    name = "arxcheck",
+    about = "Validate arxiv-data-explorer JSON data files"
+)]
 struct Args {
     /// Path to static/data directory
     #[arg(default_value = "static/data")]
@@ -37,8 +40,14 @@ fn main() {
         process::exit(0);
     }
 
-    let errors: Vec<_> = violations.iter().filter(|v| v.severity == Severity::Error).collect();
-    let warnings: Vec<_> = violations.iter().filter(|v| v.severity == Severity::Warning).collect();
+    let errors: Vec<_> = violations
+        .iter()
+        .filter(|v| v.severity == Severity::Error)
+        .collect();
+    let warnings: Vec<_> = violations
+        .iter()
+        .filter(|v| v.severity == Severity::Warning)
+        .collect();
 
     if !errors.is_empty() {
         eprintln!("\nErrors ({}):", errors.len());

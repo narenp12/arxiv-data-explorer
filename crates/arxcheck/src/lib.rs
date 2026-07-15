@@ -17,10 +17,18 @@ pub struct CheckViolation {
 
 impl CheckViolation {
     pub fn error(file: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { file: file.into(), severity: Severity::Error, message: message.into() }
+        Self {
+            file: file.into(),
+            severity: Severity::Error,
+            message: message.into(),
+        }
     }
     pub fn warning(file: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { file: file.into(), severity: Severity::Warning, message: message.into() }
+        Self {
+            file: file.into(),
+            severity: Severity::Warning,
+            message: message.into(),
+        }
     }
 }
 
