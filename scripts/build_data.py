@@ -431,7 +431,7 @@ def build_search_db(df: daft.DataFrame) -> dict:
     """Build SQLite FTS5 search index over id, title, abstract, authors, categories."""
     db_path = DATA_DIR / "search.db"
     if db_path.exists():
-        db_path.unlink()
+        db_path.unlink(missing_ok=True)
 
     fields = ["id", "title", "abstract", "authors", "categories", "update_date"]
     pdf = df.select(*[c(f) for f in fields]).to_pandas()
@@ -636,20 +636,24 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     else:
         topic_keywords = {i: [] for i in range(n_clusters)}
 
-    print("  Building recommendations via FAISS…")
+    # Build FAISS index from memmap in batches (no full RAM copy)
+    # Build FAISS index from memmap in batches (no full RAM copy)
     cpu_index = faiss.IndexFlatIP(384)
-    vectors_copy = np.array(vectors)
-    faiss.normalize_L2(vectors_copy)
-    if use_gpu:
-        res = faiss.StandardGpuResources()
-        index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-        index.add(vectors_copy)
-        cpu_index = faiss.index_gpu_to_cpu(index)
-    else:
-        cpu_index.add(vectors_copy)
+    bs = 100_000
+    for start in range(0, n, bs):
+        end = min(start + bs, n)
+        chunk = np.array(vectors[start:end], dtype=np.float32, copy=False)
+        faiss.normalize_L2(chunk)
+        cpu_index.add(chunk)
     k = min(11, n)
-    distances, indices = cpu_index.search(vectors_copy, k)
-    del vectors_copy
+    distances = np.zeros((n, k), dtype=np.float32)
+    indices = np.zeros((n, k), dtype=np.int64)
+    for start in range(0, n, bs):
+        end = min(start + bs, n)
+        chunk = np.array(vectors[start:end], dtype=np.float32, copy=False)
+        d, i = cpu_index.search(chunk, k)
+        distances[start:end] = d
+        indices[start:end] = i
 
     recs = {}
     for i, pid in enumerate(paper_ids):
@@ -686,6 +690,8 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
 def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     """Generate and store embeddings for all papers (fulltext -> abstract fallback).
 
+    import os
+    import torch
     Chunked processing: iterates Daft partitions, encodes with FP16 GPU,
     writes to .npy memmap, saves checkpoint for crash-resume.
     """
@@ -714,8 +720,8 @@ def build_embeddings(df: daft.DataFrame, use_gpu: bool = False) -> dict:
     # Load model - FP16 on GPU to halve memory
     model = SentenceTransformer("all-MiniLM-L6-v2")
     if use_gpu:
-        model = model.half().to("cuda")
-    print(f"  Model loaded on {model.device}")
+        os.environ["DAFT_RUNNER"] = "py"
+        model = SentenceTransformer("all-MiniLM-L6-v2").half().to("cuda")
 
     # Resume from checkpoint if exists
     done_ids = set()
