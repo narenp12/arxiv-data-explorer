@@ -89,3 +89,101 @@ impl Check for GraphCheck {
         violations
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CheckViolation;
+    use std::io::Write;
+
+    fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
+        let path = dir.join(name);
+        let content = serde_json::to_string(data).unwrap();
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_valid_graph() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_valid_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "category_graph.json", &serde_json::json!({
+            "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
+            "edges": [{"source": "cs.AI", "target": "cs.LG"}]
+        }));
+
+        let check = GraphCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.is_empty(), "expected no violations, got: {:?}", violations);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_graph_empty_node_id() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_empty_node_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "category_graph.json", &serde_json::json!({
+            "nodes": [{"id": ""}, {"id": "cs.LG"}],
+            "edges": [{"source": "", "target": "cs.LG"}]
+        }));
+
+        let check = GraphCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("empty id")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_graph_duplicate_edges() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_dup_edge_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "category_graph.json", &serde_json::json!({
+            "nodes": [{"id": "cs.AI"}, {"id": "cs.LG"}],
+            "edges": [
+                {"source": "cs.AI", "target": "cs.LG"},
+                {"source": "cs.AI", "target": "cs.LG"}
+            ]
+        }));
+
+        let check = GraphCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("duplicate")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_graph_missing_edge_target() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_missing_target_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "category_graph.json", &serde_json::json!({
+            "nodes": [{"id": "cs.AI"}],
+            "edges": [{"source": "cs.AI", "target": "MISSING"}]
+        }));
+
+        let check = GraphCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("not found")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_graph_missing_file() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_graph_missing_file_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let check = GraphCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert_eq!(violations.len(), 1, "expected 1 violation for missing file");
+        assert!(violations[0].message.contains("cannot read"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

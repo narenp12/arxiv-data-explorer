@@ -74,3 +74,111 @@ impl Check for CrossRefCheck {
         violations
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CheckViolation;
+    use std::io::Write;
+
+    fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
+        let path = dir.join(name);
+        let content = serde_json::to_string(data).unwrap();
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_valid_cross_ref() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_xref_valid_{}", std::process::id()));
+        let authors_dir = dir.join("authors");
+        std::fs::create_dir_all(&authors_dir).unwrap();
+
+        write_json(&dir, "author_rankings.json", &serde_json::json!([
+            {"name": "Alice", "papers": 10, "relative": 50}
+        ]));
+        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
+            "Alice": {"w": 5, "co": []}
+        }));
+
+        let check = CrossRefCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.is_empty(), "expected no violations, got: {:?}", violations);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_xref_missing_author_in_shard() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_xref_missing_auth_{}", std::process::id()));
+        let authors_dir = dir.join("authors");
+        std::fs::create_dir_all(&authors_dir).unwrap();
+
+        write_json(&dir, "author_rankings.json", &serde_json::json!([
+            {"name": "Alice", "papers": 10, "relative": 50},
+            {"name": "Unknown", "papers": 5, "relative": 20}
+        ]));
+        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
+            "Alice": {"w": 5, "co": []}
+        }));
+
+        let check = CrossRefCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert_eq!(violations.len(), 1, "expected 1 violation for unknown author");
+        assert!(violations[0].message.contains("not found in any shard"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_xref_relative_gt_100() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_xref_rel_{}", std::process::id()));
+        let authors_dir = dir.join("authors");
+        std::fs::create_dir_all(&authors_dir).unwrap();
+
+        write_json(&dir, "author_rankings.json", &serde_json::json!([
+            {"name": "Alice", "papers": 10, "relative": 150}
+        ]));
+        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
+            "Alice": {"w": 5, "co": []}
+        }));
+
+        let check = CrossRefCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("relative") && v.message.contains("> 100")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_xref_missing_author_rankings() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_xref_missing_file_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let check = CrossRefCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert_eq!(violations.len(), 1, "expected 1 violation for missing file");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_xref_both_warnings() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_xref_both_{}", std::process::id()));
+        let authors_dir = dir.join("authors");
+        std::fs::create_dir_all(&authors_dir).unwrap();
+
+        write_json(&dir, "author_rankings.json", &serde_json::json!([
+            {"name": "Unknown", "papers": 5, "relative": 200}
+        ]));
+        write_json(&authors_dir, "shard-0.json", &serde_json::json!({
+            "Alice": {"w": 5, "co": []}
+        }));
+
+        let check = CrossRefCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert_eq!(violations.len(), 2, "expected 2 violations");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

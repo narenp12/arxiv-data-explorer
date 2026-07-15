@@ -124,3 +124,110 @@ impl Check for EdgesCheck {
         violations
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CheckViolation;
+    use std::io::Write;
+
+    fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
+        let path = dir.join(name);
+        let content = serde_json::to_string(data).unwrap();
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_valid_edges() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_edges_valid_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "causal_edges.json", &serde_json::json!({
+            "edges": [{"source": "cs.AI", "target": "cs.LG", "weight": 0.5, "ci_lower": 0.1, "ci_upper": 0.9, "prob": 0.8}],
+            "categories": [{"id": "cs.AI"}]
+        }));
+        write_json(&dir, "category_dynamics.json", &serde_json::json!({
+            "series": { "cs.AI": [10, 20], "cs.LG": [5, 15] }
+        }));
+
+        let check = EdgesCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.is_empty(), "expected no violations, got: {:?}", violations);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_edges_missing_source() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_edges_missing_source_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "causal_edges.json", &serde_json::json!({
+            "edges": [{"source": "MISSING", "target": "cs.LG", "weight": 0.5, "ci_lower": 0.1, "ci_upper": 0.9, "prob": 0.8}],
+            "categories": []
+        }));
+        write_json(&dir, "category_dynamics.json", &serde_json::json!({
+            "series": { "cs.LG": [5, 15] }
+        }));
+
+        let check = EdgesCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(!violations.is_empty(), "expected violations but got none");
+        assert!(violations.iter().any(|v| v.message.contains("source")));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_edges_missing_both_files() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_edges_missing_files_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let check = EdgesCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert_eq!(violations.len(), 1, "expected 1 violation for missing file (early return)");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_edges_bad_ci_range() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_edges_bad_ci_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "causal_edges.json", &serde_json::json!({
+            "edges": [{"source": "cs.AI", "target": "cs.LG", "weight": 0.5, "ci_lower": 0.9, "ci_upper": 0.1, "prob": 0.8}],
+            "categories": [{"id": "cs.AI"}]
+        }));
+        write_json(&dir, "category_dynamics.json", &serde_json::json!({
+            "series": { "cs.AI": [10, 20], "cs.LG": [5, 15] }
+        }));
+
+        let check = EdgesCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("ci_lower")), "expected ci range warning");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_edges_bad_prob() {
+        let dir = std::env::temp_dir().join(format!("arxcheck_test_edges_bad_prob_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_json(&dir, "causal_edges.json", &serde_json::json!({
+            "edges": [{"source": "cs.AI", "target": "cs.LG", "weight": 0.5, "ci_lower": 0.1, "ci_upper": 0.9, "prob": 0.3}],
+            "categories": []
+        }));
+        write_json(&dir, "category_dynamics.json", &serde_json::json!({
+            "series": { "cs.AI": [10, 20], "cs.LG": [5, 15] }
+        }));
+
+        let check = EdgesCheck;
+        let violations = check.run(dir.to_str().unwrap());
+        assert!(violations.iter().any(|v| v.message.contains("prob")), "expected prob warning");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
