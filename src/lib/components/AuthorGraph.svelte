@@ -11,6 +11,9 @@
 
 	interface DispNode extends d3.SimulationNodeDatum { id: string; label: string; weight: number; cluster: number; }
 
+	type D3SimNode = d3.SimulationNodeDatum & DispNode;
+	type D3SimEdge = d3.SimulationLinkDatum<D3SimNode> & Omit<AuthEdge, "source" | "target">;
+
 	let svgEl = $state<SVGSVGElement>();
 	let containerEl = $state<HTMLDivElement>();
 	let data = $state<Top80Graph | null>(null);
@@ -21,15 +24,15 @@
 	let searchQuery = $state("");
 
 	let svgRoot: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
-	let graphEdges: any[] = $state([]);
-	let graphNodes: any[] = $state([]);
+	let graphEdges: D3SimEdge[] = $state([]);
+	let graphNodes: D3SimNode[] = $state([]);
 	let graphMaxW = 0;
 	let labelSet = new Set<string>();
 	const graphRadius = (w: number) => Math.max(2, Math.min(8, Math.sqrt(w) * 0.15));
 
 	let matchCount = $derived(
 		searchQuery.trim()
-			? graphNodes.filter((n: any) => n.label.toLowerCase().includes(searchQuery.trim().toLowerCase())).length
+			? graphNodes.filter((n: D3SimNode) => n.label.toLowerCase().includes(searchQuery.trim().toLowerCase())).length
 			: graphNodes.length
 	);
 
@@ -37,8 +40,8 @@
 		if (!selectedNode) return [];
 		const degrees = new Map<string, number>();
 		for (const e of graphEdges) {
-			const source = e.source as any;
-			const target = e.target as any;
+			const source = e.source as D3SimNode;
+			const target = e.target as D3SimNode;
 			if (source.id === selectedNode.id) degrees.set(target.label ?? target.id, (degrees.get(target.label ?? target.id) ?? 0) + (e.weight ?? 1));
 			if (target.id === selectedNode.id) degrees.set(source.label ?? source.id, (degrees.get(source.label ?? source.id) ?? 0) + (e.weight ?? 1));
 		}
@@ -77,58 +80,58 @@
 		if (!svgRoot || !graphEdges.length) return;
 		const root = svgRoot;
 		if (q) {
-			root.selectAll<any, any>("circle")
-				.attr("fill-opacity", (d: any) =>
+			root.selectAll<SVGCircleElement, D3SimNode>("circle")
+				.attr("fill-opacity", (d: D3SimNode) =>
 					d.label.toLowerCase().includes(q) ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.1
 				);
-			root.selectAll<any, any>("path").attr("stroke-opacity", 0.04);
+			root.selectAll<SVGPathElement, D3SimEdge>("path").attr("stroke-opacity", 0.04);
 		} else if (sel) {
 			const motionOk = !matchMedia("(prefers-reduced-motion: reduce)").matches;
-			root.selectAll<any, any>("circle")
-				.attr("fill-opacity", (d: any) => {
+			root.selectAll<SVGCircleElement, D3SimNode>("circle")
+				.attr("fill-opacity", (d: D3SimNode) => {
 					if (d.id === sel.id) return nodeOpacity(d.weight);
 					const connected = graphEdges.some(
-						(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
-							((e.source as any).id === sel.id || (e.target as any).id === sel.id)
+						(e: D3SimEdge) => ((e.source as D3SimNode).id === d.id || (e.target as D3SimNode).id === d.id) &&
+							((e.source as D3SimNode).id === sel.id || (e.target as D3SimNode).id === sel.id)
 					);
 					return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
 				})
-				.attr("stroke", (d: any) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
-				.attr("stroke-width", (d: any) => d.id === sel.id ? 2.5 : 0.8)
-				.attr("style", (d: any) =>
+				.attr("stroke", (d: D3SimNode) => d.id === sel.id ? "var(--primary)" : "var(--surface-container)")
+				.attr("stroke-width", (d: D3SimNode) => d.id === sel.id ? 2.5 : 0.8)
+				.attr("style", (d: D3SimNode) =>
 					d.id === sel.id && motionOk
 						? "animation: select-pulse 0.4s ease-out 2; transition: stroke-width 150ms ease, stroke-opacity 150ms ease"
 						: "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease"
 				);
 			const egoIds = new Set([sel.id]);
 			for (const e of graphEdges) {
-				if ((e.source as any).id === sel.id) egoIds.add((e.target as any).id);
-				if ((e.target as any).id === sel.id) egoIds.add((e.source as any).id);
+				if ((e.source as D3SimNode).id === sel.id) egoIds.add((e.target as D3SimNode).id);
+				if ((e.target as D3SimNode).id === sel.id) egoIds.add((e.source as D3SimNode).id);
 			}
-			const egoUnlabelled = graphNodes.filter((n: any) => egoIds.has(n.id) && !labelSet.has(n.id));
+			const egoUnlabelled = graphNodes.filter((n: D3SimNode) => egoIds.has(n.id) && !labelSet.has(n.id));
 			if (egoUnlabelled.length) {
-				root.selectAll<SVGTextElement, any>("text.node-ego-label").data(egoUnlabelled).join("text")
+				root.selectAll<SVGTextElement, D3SimNode>("text.node-ego-label").data(egoUnlabelled).join("text")
 					.attr("class", "node-ego-label")
-					.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - graphRadius(d.weight) - 3)
+					.attr("x", (d: D3SimNode) => d.x).attr("y", (d: D3SimNode) => d.y - graphRadius(d.weight) - 3)
 					.attr("text-anchor", "middle")
 					.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
 					.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
-					.text((d: any) => d.label);
+					.text((d: D3SimNode) => d.label);
 			}
-			root.selectAll<any, any>("path")
-				.attr("stroke-opacity", (e: any) => {
-					const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
+			root.selectAll<SVGPathElement, D3SimEdge>("path")
+				.attr("stroke-opacity", (e: D3SimEdge) => {
+					const touches = (e.source as D3SimNode).id === sel.id || (e.target as D3SimNode).id === sel.id;
 					return touches ? 0.5 : 0.04;
 				});
 		} else {
-			root.selectAll<any, any>("circle")
-				.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
+			root.selectAll<SVGCircleElement, D3SimNode>("circle")
+				.attr("fill-opacity", (d: D3SimNode) => nodeOpacity(d.weight))
 				.attr("stroke", "var(--surface-container)")
 				.attr("stroke-width", 0.8)
 				.attr("style", "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease, stroke-width 150ms ease");
-			root.selectAll<any, any>("path")
-				.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
-			root.selectAll<SVGTextElement, any>("text.node-ego-label").remove();
+			root.selectAll<SVGPathElement, D3SimEdge>("path")
+				.attr("stroke-opacity", (d: D3SimEdge) => Math.min(0.5, 0.12 + Math.log(d.weight) * 0.06));
+			root.selectAll<SVGTextElement, D3SimNode>("text.node-ego-label").remove();
 		}
 	});
 
@@ -148,7 +151,7 @@
 		const nodes: DispNode[] = graph.nodes.map((n, i) => ({ ...n, cluster: clusters[i] }));
 		const edges = graph.edges.map((e) => ({ ...e }));
 		const sim = d3.forceSimulation<DispNode>(nodes)
-			.force("link", d3.forceLink(edges).id((d: any) => d.id).distance(50).strength(0.3))
+			.force("link", d3.forceLink<D3SimNode, D3SimEdge>(edges).id((d) => d.id).distance(50).strength(0.3))
 			.force("charge", d3.forceManyBody().strength(-20))
 			.force("center", d3.forceCenter(w / 2, h / 2))
 			.force("collision", d3.forceCollide().radius(4))
@@ -159,8 +162,9 @@
 		graphEdges = edges;
 		graphNodes = nodes;
 		graphMaxW = Math.max(...graph.nodes.map((n) => n.weight));
-		function edgePath(d: any): string {
-			const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+		function edgePath(d: D3SimEdge): string {
+			const src = d.source as D3SimNode, tgt = d.target as D3SimNode;
+			const sx = src.x, sy = src.y, tx = tgt.x, ty = tgt.y;
 			const mx = (sx + tx) / 2, my = (sy + ty) / 2;
 			const dx = tx - sx, dy = ty - sy, len = Math.hypot(dx, dy) || 1;
 			const offset = 4 + Math.log(d.weight) * 2;
@@ -171,45 +175,45 @@
 			.attr("d", edgePath)
 			.attr("fill", "none")
 			.attr("stroke", "var(--outline)")
-			.attr("stroke-width", (d: any) => Math.max(0.2, Math.log((d as AuthEdge).weight) / 4))
-			.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as AuthEdge).weight) * 0.06))
+			.attr("stroke-width", (d: D3SimEdge) => Math.max(0.2, Math.log(d.weight) / 4))
+			.attr("stroke-opacity", (d: D3SimEdge) => Math.min(0.5, 0.12 + Math.log(d.weight) * 0.06))
 			.attr("style", "transition: stroke-opacity 150ms ease");
 		const root = svgRoot;
 
-		const radius = (d: any) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
-		const circles = root.selectAll<SVGCircleElement, any>("circle").data(nodes).join("circle")
+		const radius = (d: D3SimNode) => Math.max(2, Math.min(8, Math.sqrt(d.weight) * 0.15));
+		const circles = root.selectAll<SVGCircleElement, D3SimNode>("circle").data(nodes).join("circle")
 			.attr("r", radius)
-			.attr("fill", (d: any) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
-			.attr("fill-opacity", (d: any) => nodeOpacity(d.weight))
+			.attr("fill", (d: D3SimNode) => CLUSTER_COLORS[d.cluster % CLUSTER_COLORS.length])
+			.attr("fill-opacity", (d: D3SimNode) => nodeOpacity(d.weight))
 			.attr("stroke", "var(--surface-container)")
 			.attr("stroke-width", 0.8)
 			.attr("cursor", "pointer")
 			.attr("style", "transition: fill-opacity 150ms ease, stroke-opacity 150ms ease")
-			.attr("cx", (d: any) => d.x).attr("cy", (d: any) => d.y)
-			.on("click", (_e: MouseEvent, d: any) => {
+			.attr("cx", (d: D3SimNode) => d.x).attr("cy", (d: D3SimNode) => d.y)
+			.on("click", (_e: MouseEvent, d: D3SimNode) => {
 				if (selectedNode?.id === d.id) { selectedNode = null; return; }
 				selectedNode = d;
 			})
-			.on("mouseenter", (event: MouseEvent, d: any) => {
+			.on("mouseenter", (event: MouseEvent, d: D3SimNode) => {
 				if ("ontouchstart" in window) return;
 				const rect = (event.currentTarget as SVGSVGElement).closest("svg")!.getBoundingClientRect();
 				const degree = edges.filter(
-					(e: any) => (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id
+					(e: D3SimEdge) => (e.source as D3SimNode).id === d.id || (e.target as D3SimNode).id === d.id
 				).length;
 				activeTooltip = { node: { label: d.label, weight: d.weight, degree }, x: event.clientX - rect.left, y: event.clientY - rect.top };
 				if (!prefersReducedMotion) {
-					root.selectAll<SVGCircleElement, any>("circle")
-						.attr("fill-opacity", (n: any) => {
+					root.selectAll<SVGCircleElement, D3SimNode>("circle")
+						.attr("fill-opacity", (n: D3SimNode) => {
 							if (n.id === d.id) return nodeOpacity(n.weight);
 							const connected = edges.some(
-								(e: any) => ((e.source as DispNode).id === n.id || (e.target as DispNode).id === n.id) &&
-									((e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id)
+								(e: D3SimEdge) => ((e.source as D3SimNode).id === n.id || (e.target as D3SimNode).id === n.id) &&
+									((e.source as D3SimNode).id === d.id || (e.target as D3SimNode).id === d.id)
 							);
 							return connected ? nodeOpacity(n.weight) : nodeOpacity(n.weight) * 0.15;
 						});
-					root.selectAll<any, any>("path")
-						.attr("stroke-opacity", (e: any) => {
-							const touches = (e.source as DispNode).id === d.id || (e.target as DispNode).id === d.id;
+					root.selectAll<SVGPathElement, D3SimEdge>("path")
+						.attr("stroke-opacity", (e: D3SimEdge) => {
+							const touches = (e.source as D3SimNode).id === d.id || (e.target as D3SimNode).id === d.id;
 							return touches ? 0.5 : 0.04;
 						});
 				}
@@ -220,36 +224,36 @@
 					const q = searchQuery.trim().toLowerCase();
 					const sel = selectedNode;
 					if (q) {
-						root.selectAll<SVGCircleElement, any>("circle")
-							.attr("fill-opacity", (d: any) =>
+						root.selectAll<SVGCircleElement, D3SimNode>("circle")
+							.attr("fill-opacity", (d: D3SimNode) =>
 								d.label.toLowerCase().includes(q) ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.1
 							);
-						root.selectAll<any, any>("path").attr("stroke-opacity", 0.04);
+						root.selectAll<SVGPathElement, D3SimEdge>("path").attr("stroke-opacity", 0.04);
 					} else if (sel) {
-						root.selectAll<SVGCircleElement, any>("circle")
-							.attr("fill-opacity", (d: any) => {
+						root.selectAll<SVGCircleElement, D3SimNode>("circle")
+							.attr("fill-opacity", (d: D3SimNode) => {
 								if (d.id === sel.id) return nodeOpacity(d.weight);
 								const connected = edges.some(
-									(e: any) => ((e.source as any).id === d.id || (e.target as any).id === d.id) &&
-										((e.source as any).id === sel.id || (e.target as any).id === sel.id)
+									(e: D3SimEdge) => ((e.source as D3SimNode).id === d.id || (e.target as D3SimNode).id === d.id) &&
+										((e.source as D3SimNode).id === sel.id || (e.target as D3SimNode).id === sel.id)
 								);
 								return connected ? nodeOpacity(d.weight) : nodeOpacity(d.weight) * 0.15;
 							});
-						root.selectAll<any, any>("path")
-							.attr("stroke-opacity", (e: any) => {
-								const touches = (e.source as any).id === sel.id || (e.target as any).id === sel.id;
+						root.selectAll<SVGPathElement, D3SimEdge>("path")
+							.attr("stroke-opacity", (e: D3SimEdge) => {
+								const touches = (e.source as D3SimNode).id === sel.id || (e.target as D3SimNode).id === sel.id;
 								return touches ? 0.5 : 0.04;
 							});
 					} else {
-						root.selectAll<SVGCircleElement, any>("circle")
-							.attr("fill-opacity", (d: any) => nodeOpacity(d.weight));
-						root.selectAll<any, any>("path")
-							.attr("stroke-opacity", (d: any) => Math.min(0.5, 0.12 + Math.log((d as any).weight) * 0.06));
+						root.selectAll<SVGCircleElement, D3SimNode>("circle")
+							.attr("fill-opacity", (d: D3SimNode) => nodeOpacity(d.weight));
+						root.selectAll<SVGPathElement, D3SimEdge>("path")
+							.attr("stroke-opacity", (d: D3SimEdge) => Math.min(0.5, 0.12 + Math.log(d.weight) * 0.06));
 					}
 				}
 			});
 
-		const dragHandler = d3.drag<SVGCircleElement, any>()
+		const dragHandler = d3.drag<SVGCircleElement, D3SimNode>()
 			.on("start", (event, d) => {
 				if (prefersReducedMotion) return;
 				if (!event.active) sim.alphaTarget(0.3).restart();
@@ -270,14 +274,14 @@
 		circles.call(dragHandler);
 
 		const labelled = [...nodes].sort((a, b) => b.weight - a.weight).slice(0, 12);
-		labelSet = new Set(labelled.map((n: any) => n.id));
+		labelSet = new Set(labelled.map((n: D3SimNode) => n.id));
 		root.selectAll("text").data(labelled).join("text")
-			.attr("x", (d: any) => d.x).attr("y", (d: any) => d.y - radius(d) - 3)
+			.attr("x", (d: D3SimNode) => d.x).attr("y", (d: D3SimNode) => d.y - radius(d) - 3)
 			.attr("text-anchor", "middle")
 			.attr("class", "node-label")
 			.attr("font-family", "var(--font-mono)").attr("font-size", "8px").attr("font-weight", "700")
 			.attr("fill", "var(--on-surface-variant)").attr("pointer-events", "none")
-			.text((d: any) => d.label);
+			.text((d: D3SimNode) => d.label);
 
 		const zoom = d3.zoom<SVGSVGElement, unknown>()
 			.scaleExtent([0.5, 6])
