@@ -1,7 +1,7 @@
 import { getCached, setCached, detailCache } from './cache';
 import { rateLimitedFetch } from './rate-limit';
 import { authorList, getProp, API_BASE } from './helpers';
-import { ensureChecker } from './index';
+import { ensureChecker } from './checker';
 
 export const DETAIL_FIELDS = "title,abstract,year,citationCount,authors,externalIds,publicationDate,venue,openAccessPdf";
 

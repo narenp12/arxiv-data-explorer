@@ -1,7 +1,7 @@
 import { getCached, setCached, searchCache } from './cache';
 import { rateLimitedFetch } from './rate-limit';
 import { arxivId, getProp, API_BASE, ARXIV_API_BASE } from './helpers';
-import { ensureChecker } from './index';
+import { ensureChecker } from './checker';
 
 export const SEARCH_FIELDS = "title,year,citationCount,authors,externalIds";
 
