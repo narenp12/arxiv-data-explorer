@@ -836,38 +836,42 @@ def build_suggest_index(df, output_dir=None, author_ranking_path=None):
                 author_rankings[str(entry)] = idx
 
     shard_data = {}
-    categories_set = {}
+    categories_set = set()
 
-    papers = df.to_pydict()
-    for i in range(len(papers["id"])):
-        raw = papers["title"][i] or ""
-        normalized = unicodedata.normalize("NFD", raw)
-        normalized = re.sub(r"[\u0300-\u036f]", "", normalized)
-        first_char = normalized[0].lower() if normalized else "other"
-        if not re.match(r"^[a-z]$", first_char):
-            first_char = "other"
+    # Iterate over Daft partitions instead of to_pydict() to avoid OOM
+    for partition in df.iter_partitions():
+        pdf = partition.to_pandas()
+        for _, row in pdf.iterrows():
+            raw = str(row.get("title", "") or "")
+            normalized = unicodedata.normalize("NFD", raw)
+            normalized = re.sub(r"[\u0300-\u036f]", "", normalized)
+            first_char = normalized[0].lower() if normalized else "other"
+            if not re.match(r"^[a-z]$", first_char):
+                first_char = "other"
 
-        if first_char not in shard_data:
-            shard_data[first_char] = {"t": [], "a": [], "a_seen": set()}
+            if first_char not in shard_data:
+                shard_data[first_char] = {"t": [], "a": [], "a_seen": set()}
 
-        paper_id = papers["id"][i]
-        shard_data[first_char]["t"].append([raw, paper_id])
+            paper_id = str(row.get("id", ""))
+            shard_data[first_char]["t"].append([raw, paper_id])
 
-        authors_field = papers["authors"][i]
-        if isinstance(authors_field, str):
-            author_names = [a.strip() for a in authors_field.split(",") if a.strip()]
-        elif isinstance(authors_field, list):
-            author_names = authors_field
-        else:
-            author_names = []
-        for author_name in author_names:
-            if author_name not in shard_data[first_char]["a_seen"]:
-                shard_data[first_char]["a_seen"].add(author_name)
-                rank_idx = author_rankings.get(author_name, -1)
-                shard_data[first_char]["a"].append([author_name, rank_idx])
+            authors_field = row.get("authors", "")
+            if isinstance(authors_field, str):
+                author_names = [a.strip() for a in authors_field.split(",") if a.strip()]
+            elif isinstance(authors_field, list):
+                author_names = authors_field
+            else:
+                author_names = []
+            for author_name in author_names:
+                if author_name not in shard_data[first_char]["a_seen"]:
+                    shard_data[first_char]["a_seen"].add(author_name)
+                    rank_idx = author_rankings.get(author_name, -1)
+                    shard_data[first_char]["a"].append([author_name, rank_idx])
 
-        for cat in (papers["categories"][i] or []):
-            categories_set[cat] = ""
+            cat_str = str(row.get("categories", "") or "")
+            for cat in cat_str.split():
+                if cat:
+                    categories_set.add(cat)
 
     categories_list = sorted(categories_set.keys())
     cat_data = {"c": [[c, ""] for c in categories_list]}
