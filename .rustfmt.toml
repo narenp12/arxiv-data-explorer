@@ -1,0 +1,4 @@
+style_edition = "2024"
+version = "Two"
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"

@@ -35,7 +35,7 @@ impl AuthorTrie {
             }
         }
         let mut results = Vec::new();
-        collect_all(&node, &mut results);
+        collect_all(node, &mut results);
         results
     }
 }
