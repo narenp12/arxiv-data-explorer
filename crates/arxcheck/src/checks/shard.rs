@@ -1,5 +1,6 @@
 use crate::{Check, CheckViolation};
 use serde::Deserialize;
+use super::read_json_file;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -38,45 +39,27 @@ impl Check for ShardCheck {
             let path = entry.path();
             let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if !fname.starts_with("shard-")
-                || path.extension().and_then(|s| s.to_str()) != Some("json")
-            {
-                continue;
-            }
-            let content = match fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    violations.push(CheckViolation::error(
+                && let Some(ext) = path.extension().and_then(|s| s.to_str())
+                && ext != "json"
+            { continue; }
+            let shard: std::collections::HashMap<String, ShardEntry> =
+                match read_json_file(&path, &mut violations) {
+                    Some(m) => m,
+                    None => continue,
+                };
+            for name in shard.keys() {
+                if !all_names.insert(name.clone()) {
+                    violations.push(CheckViolation::warning(
                         path.display().to_string(),
-                        format!("cannot read: {e}"),
+                        format!("duplicate author name across shards: \"{name}\""),
                     ));
-                    continue;
                 }
-            };
-            let shard: Result<std::collections::HashMap<String, ShardEntry>, _> =
-                serde_json::from_str(&content);
-            match shard {
-                Ok(map) => {
-                    for name in map.keys() {
-                        if !all_names.insert(name.clone()) {
-                            violations.push(CheckViolation::warning(
-                                path.display().to_string(),
-                                format!("duplicate author name across shards: \"{name}\""),
-                            ));
-                        }
-                    }
-                    for (name, entry) in &map {
-                        if entry.co.iter().any(|c| c.0.is_empty()) {
-                            violations.push(CheckViolation::error(
-                                path.display().to_string(),
-                                format!("author \"{name}\" has empty co-author name"),
-                            ));
-                        }
-                    }
-                }
-                Err(e) => {
+            }
+            for (name, entry) in &shard {
+                if entry.co.iter().any(|c| c.0.is_empty()) {
                     violations.push(CheckViolation::error(
                         path.display().to_string(),
-                        format!("invalid JSON: {e}"),
+                        format!("author \"{name}\" has empty co-author name"),
                     ));
                 }
             }
@@ -89,6 +72,7 @@ impl Check for ShardCheck {
 mod tests {
     use super::*;
 
+    use std::assert_matches;
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
@@ -140,10 +124,9 @@ mod tests {
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.message.contains("invalid JSON"))
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("invalid JSON")),
+            Some(_)
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -173,7 +156,10 @@ mod tests {
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("duplicate")));
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("duplicate")),
+            Some(_)
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -197,10 +183,9 @@ mod tests {
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.message.contains("empty co-author"))
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("empty co-author")),
+            Some(_)
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
@@ -216,10 +201,9 @@ mod tests {
 
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.message.contains("cannot read directory"))
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("cannot read directory")),
+            Some(_)
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
