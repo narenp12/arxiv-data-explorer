@@ -873,7 +873,7 @@ def build_suggest_index(df, output_dir=None, author_ranking_path=None):
                 if cat:
                     categories_set.add(cat)
 
-    categories_list = sorted(categories_set.keys())
+    categories_list = sorted(categories_set)
     cat_data = {"c": [[c, ""] for c in categories_list]}
 
     import time
