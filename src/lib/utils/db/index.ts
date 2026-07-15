@@ -2,7 +2,7 @@ export { ensureChecker } from './checker';
 export type { WasmAPI } from './checker';
 
 export { getCached, setCached, clearSearchCache, CACHE_LIMIT } from './cache';
-export { rateLimitedFetch, RATE_LIMIT_MS } from './rate-limit';
+export { rateLimitedFetch } from './rate-limit';
 export { arxivId, authorList, getProp, scoreCategory, API_BASE, ARXIV_API_BASE } from './helpers';
 export { SuggestShard } from './suggest';
 export { searchPapers, searchArxiv, searchArxivCategory, parseArxivTotal, sanitiseYearRange, sanitiseFieldOfStudy, sanitiseMinCites, SEARCH_FIELDS } from './search';

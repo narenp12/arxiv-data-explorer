@@ -1,5 +1,3 @@
-import { inFlight, resetRateLimitState } from './rate-limit';
-
 export const CACHE_LIMIT = 100;
 export const searchCache = new Map<string, unknown>();
 export const detailCache = new Map<string, unknown>();
@@ -25,6 +23,4 @@ export function setCached<K, V>(cache: Map<K, V>, key: K, value: V) {
 export function clearSearchCache() {
 	searchCache.clear();
 	detailCache.clear();
-	inFlight.clear();
-	resetRateLimitState();
 }
