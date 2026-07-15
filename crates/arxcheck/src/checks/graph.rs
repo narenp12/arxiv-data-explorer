@@ -1,7 +1,7 @@
+use super::read_json_file;
 use crate::{Check, CheckViolation};
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::fs;
 use std::path::Path;
 
 #[derive(Deserialize)]
@@ -32,26 +32,9 @@ impl Check for GraphCheck {
         let mut violations = Vec::new();
         let path = Path::new(data_dir).join("category_graph.json");
 
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) => {
-                violations.push(CheckViolation::error(
-                    path.display().to_string(),
-                    format!("cannot read: {e}"),
-                ));
-                return violations;
-            }
-        };
-
-        let graph: CategoryGraph = match serde_json::from_str(&content) {
-            Ok(g) => g,
-            Err(e) => {
-                violations.push(CheckViolation::error(
-                    path.display().to_string(),
-                    format!("invalid JSON: {e}"),
-                ));
-                return violations;
-            }
+        let graph: CategoryGraph = match read_json_file(&path, &mut violations) {
+            Some(g) => g,
+            None => return violations,
         };
 
         let node_ids: HashSet<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
@@ -96,6 +79,7 @@ impl Check for GraphCheck {
 mod tests {
     use super::*;
 
+    use std::assert_matches;
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
@@ -150,7 +134,10 @@ mod tests {
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("empty id")));
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("empty id")),
+            Some(_)
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -177,7 +164,10 @@ mod tests {
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("duplicate")));
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("duplicate")),
+            Some(_)
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -201,7 +191,10 @@ mod tests {
 
         let check = GraphCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(violations.iter().any(|v| v.message.contains("not found")));
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("not found")),
+            Some(_)
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
