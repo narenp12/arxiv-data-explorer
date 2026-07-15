@@ -149,7 +149,7 @@
 		svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
 		d3.select(svg).selectAll("*").remove();
 		const nodes: DispNode[] = graph.nodes.map((n, i) => ({ ...n, cluster: clusters[i] }));
-		const edges = graph.edges.map((e) => ({ ...e }));
+		const edges = graph.edges.map((e) => ({ ...e })) as unknown as D3SimEdge[];
 		const sim = d3.forceSimulation<DispNode>(nodes)
 			.force("link", d3.forceLink<D3SimNode, D3SimEdge>(edges).id((d) => d.id).distance(50).strength(0.3))
 			.force("charge", d3.forceManyBody().strength(-20))

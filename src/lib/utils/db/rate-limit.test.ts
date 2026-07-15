@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-beforeEach(() => {
+beforeEach(async () => {
 	vi.restoreAllMocks();
+	const { resetRateLimitState } = await import("./rate-limit");
+	resetRateLimitState();
 });
 
 describe("rateLimitedFetch", () => {

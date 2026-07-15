@@ -11,7 +11,7 @@ export function ensureChecker(): WasmAPI | null {
 if (import.meta.env.DEV) {
 	import("../../../../static/wasm/arxcheck/arxcheck.js")
 		.then((m) => m.default().then(() => { _check = m as unknown as WasmAPI; _checkReady = true; }))
-		.catch(() => {});
+		.catch(() => {} /* wasm not present in prod */);
 }
 
 export type { WasmAPI };

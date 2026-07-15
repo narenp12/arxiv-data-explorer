@@ -84,7 +84,7 @@ impl Check for ShardCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CheckViolation;
+    
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
