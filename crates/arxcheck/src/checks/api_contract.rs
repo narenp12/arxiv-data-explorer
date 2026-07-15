@@ -12,6 +12,20 @@ fn string_fields_present(obj: &Value, fields: &[&str]) -> Vec<String> {
     errors
 }
 
+fn require_string_field(obj: &Value, field: &str) -> Result<(), String> {
+    match obj.get(field) {
+        Some(Value::String(s)) if !s.is_empty() => Ok(()),
+        _ => Err(format!("field \"{field}\" missing or empty")),
+    }
+}
+
+fn require_number_field(obj: &Value, field: &str) -> Result<(), String> {
+    match obj.get(field) {
+        Some(Value::Number(_)) => Ok(()),
+        _ => Err(format!("field \"{field}\" missing or not a number")),
+    }
+}
+
 pub fn validate_paper_result(json: &[u8]) -> Vec<String> {
     let v: Value = match serde_json::from_slice(json) {
         Ok(v) => v,
@@ -36,21 +50,13 @@ pub fn validate_paper_detail(json: &[u8]) -> Vec<String> {
         Ok(v) => v,
         Err(e) => return vec![format!("invalid JSON: {e}")],
     };
-    let obj = match &v {
-        Value::Object(o) => o,
-        _ => return vec!["expected JSON object".to_string()],
-    };
-    match obj.get("title") {
-        Some(Value::String(s)) if !s.is_empty() => {}
-        _ => return vec!["field \"title\" missing or empty".to_string()],
+    if !v.is_object() {
+        return vec!["expected JSON object".to_string()];
     }
-    match obj.get("abstract") {
-        Some(Value::String(s)) if !s.is_empty() => {}
-        _ => return vec!["field \"abstract\" missing or empty".to_string()],
-    }
-    match obj.get("venue") {
-        Some(Value::String(s)) if !s.is_empty() => {}
-        _ => return vec!["field \"venue\" missing or empty".to_string()],
+    for field in ["title", "abstract", "venue"] {
+        if let Err(e) = require_string_field(&v, field) {
+            return vec![e];
+        }
     }
     Vec::new()
 }
@@ -60,21 +66,17 @@ pub fn validate_author_profile(json: &[u8]) -> Vec<String> {
         Ok(v) => v,
         Err(e) => return vec![format!("invalid JSON: {e}")],
     };
-    let obj = match &v {
-        Value::Object(o) => o,
-        _ => return vec!["expected JSON object".to_string()],
-    };
-    match obj.get("name") {
-        Some(Value::String(s)) if !s.is_empty() => {}
-        _ => return vec!["field \"name\" missing or empty".to_string()],
+    if !v.is_object() {
+        return vec!["expected JSON object".to_string()];
     }
-    match obj.get("worksCount") {
-        Some(Value::Number(_)) => {}
-        _ => return vec!["field \"worksCount\" missing or not a number".to_string()],
+    if let Err(e) = require_string_field(&v, "name") {
+        return vec![e];
     }
-    match obj.get("citedByCount") {
-        Some(Value::Number(_)) => {}
-        _ => return vec!["field \"citedByCount\" missing or not a number".to_string()],
+    if let Err(e) = require_number_field(&v, "worksCount") {
+        return vec![e];
+    }
+    if let Err(e) = require_number_field(&v, "citedByCount") {
+        return vec![e];
     }
     Vec::new()
 }
