@@ -263,7 +263,7 @@ def build_author_graph(df: daft.DataFrame) -> dict:
                 a, b = (row[i], row[j]) if row[i] < row[j] else (row[j], row[i])
                 pair_counts[(a, b)] = pair_counts.get((a, b), 0) + 1
 
-    top_authors = sorted(name_counts.items(), key=lambda x: -x[1])[:50000]
+    top_authors = sorted(name_counts.items(), key=lambda x: -x[1])[:10000]
     author_set = {a for a, _ in top_authors}
 
     filtered_pairs = [(a, b, c) for (a, b), c in pair_counts.items()
@@ -569,31 +569,43 @@ def build_fulltext(df: daft.DataFrame, limit: int = 0) -> dict:
 
 
 def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
-    """Run topic clustering and build paper recommendations."""
-    from sentence_transformers import SentenceTransformer
-    from sklearn.cluster import KMeans
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
+    """Run topic clustering and build paper recommendations.
+    Uses memmap-backed vectors from Task 1, MiniBatchKMeans for memory efficiency.
+    """
     import faiss
+    from sklearn.cluster import MiniBatchKMeans
+    from sklearn.feature_extraction.text import TfidfVectorizer
 
     embed_dir = DATA_DIR / "embeddings"
-    embed_path = embed_dir / "papers.parquet"
-    if not embed_path.exists():
+    vectors_path = embed_dir / "vectors.npy"
+    ids_path = embed_dir / "ids.jsonl"
+    embed_path = embed_dir / "papers.parquet"  # fallback
+
+    if vectors_path.exists():
+        print("  Loading vectors via memmap…")
+        vectors = np.lib.format.open_memmap(str(vectors_path), mode="r")
+        n = vectors.shape[0]
+        paper_ids = []
+        with open(str(ids_path)) as f:
+            for line in f:
+                paper_ids.append(json.loads(line)["id"])
+        paper_ids = paper_ids[:n]
+    elif embed_path.exists():
+        print("  Loading embeddings from Parquet (fallback)…")
+        emb_df = daft.read_parquet(str(embed_path))
+        emb_pdf = emb_df.select(c("id"), c("embedding")).to_pandas()
+        vectors = np.array(emb_pdf["embedding"].tolist(), dtype=np.float32)
+        paper_ids = emb_pdf["id"].tolist()
+        n = len(vectors)
+    else:
         return {"error": "No embeddings found; run --embeddings first"}
 
-    print("  Loading embeddings…")
-    emb_df = daft.read_parquet(str(embed_path))
-    emb_pdf = emb_df.select(c("id"), c("embedding")).to_pandas()
-    vectors = np.array(emb_pdf["embedding"].tolist(), dtype=np.float32)
-    paper_ids = emb_pdf["id"].tolist()
-    n = len(vectors)
     print(f"  {n:,} vectors loaded")
 
     n_clusters = min(10, max(2, n // 100))
-    print(f"  Running KMeans with k={n_clusters}…")
-    km = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
+    print(f"  Running MiniBatchKMeans with k={n_clusters}…")
+    km = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=10000, n_init=3)
     labels = km.fit_predict(vectors)
-    centroids = km.cluster_centers_
 
     fulltext_path = DATA_DIR / "fulltext" / "papers.parquet"
     if fulltext_path.exists() and n_clusters <= len(vectors):
@@ -626,16 +638,18 @@ def build_ml(df: daft.DataFrame, use_gpu: bool = False) -> dict:
 
     print("  Building recommendations via FAISS…")
     cpu_index = faiss.IndexFlatIP(384)
-    faiss.normalize_L2(vectors)
+    vectors_copy = np.array(vectors)
+    faiss.normalize_L2(vectors_copy)
     if use_gpu:
         res = faiss.StandardGpuResources()
         index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-        index.add(vectors)
+        index.add(vectors_copy)
         cpu_index = faiss.index_gpu_to_cpu(index)
     else:
-        cpu_index.add(vectors)
+        cpu_index.add(vectors_copy)
     k = min(11, n)
-    distances, indices = cpu_index.search(vectors, k)
+    distances, indices = cpu_index.search(vectors_copy, k)
+    del vectors_copy
 
     recs = {}
     for i, pid in enumerate(paper_ids):
