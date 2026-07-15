@@ -1,10 +1,40 @@
 use crate::{Check, CheckViolation};
+use std::path::Path;
+use std::fs;
+use serde::de::DeserializeOwned;
 
-pub mod shard;
+#[allow(dead_code)]
+pub(crate) fn read_json_file<T: DeserializeOwned>(
+    path: &Path,
+    violations: &mut Vec<CheckViolation>,
+) -> Option<T> {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            violations.push(CheckViolation::error(
+                path.display().to_string(),
+                format!("cannot read: {e}"),
+            ));
+            return None;
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            violations.push(CheckViolation::error(
+                path.display().to_string(),
+                format!("invalid JSON: {e}"),
+            ));
+            None
+        }
+    }
+}
+
+pub mod api_contract;
 pub mod edges;
 pub mod graph;
+pub mod shard;
 pub mod xref;
-pub mod api_contract;
 
 pub fn run_all(data_dir: &str) -> Vec<CheckViolation> {
     let checks: Vec<Box<dyn Check>> = vec![
