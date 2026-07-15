@@ -138,32 +138,16 @@ export async function fetchAuthorProfile(id: string): Promise<AuthorProfile | nu
 	};
 }
 
-export async function fetchReferences(id: string, perPage = 25): Promise<WorkSummary[]> {
+async function fetchWorks(path: string, id: string, perPage = 25): Promise<WorkSummary[]> {
 	const oaid = normalizeOpenAlexId(id);
 	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(oaid)}/references?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
+		`${API_BASE}/works/${encodeURIComponent(oaid)}/${path}?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
 	);
 	if (!res.ok) return [];
 	const data = await res.json();
 	return (data.results ?? []).map(parseWork);
 }
 
-export async function fetchCitations(id: string, perPage = 25): Promise<WorkSummary[]> {
-	const oaid = normalizeOpenAlexId(id);
-	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(oaid)}/citations?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
-	);
-	if (!res.ok) return [];
-	const data = await res.json();
-	return (data.results ?? []).map(parseWork);
-}
-
-export async function fetchRelatedWorks(id: string, perPage = 25): Promise<WorkSummary[]> {
-	const oaid = normalizeOpenAlexId(id);
-	const res = await rateLimitedFetch(
-		`${API_BASE}/works/${encodeURIComponent(oaid)}/related_works?per_page=${perPage}&select=id,title,authorships,publication_year,doi,cited_by_count`,
-	);
-	if (!res.ok) return [];
-	const data = await res.json();
-	return (data.results ?? []).map(parseWork);
-}
+export const fetchReferences = (id: string, perPage = 25) => fetchWorks("references", id, perPage);
+export const fetchCitations = (id: string, perPage = 25) => fetchWorks("citations", id, perPage);
+export const fetchRelatedWorks = (id: string, perPage = 25) => fetchWorks("related_works", id, perPage);
