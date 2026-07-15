@@ -22,8 +22,8 @@ struct RawShardEntry {
 type RawShard = std::collections::HashMap<String, RawShardEntry>;
 
 impl AuthorStore {
-    pub fn from_shards(shards_json: &str, rankings_json: &str) -> Self {
-        let shard: RawShard = serde_json::from_str(shards_json).expect("valid shard JSON");
+    pub fn from_shards(shards_json: &str, rankings_json: &str) -> Result<Self, serde_json::Error> {
+        let shard: RawShard = serde_json::from_str(shards_json)?;
         let mut store = AuthorStore::default();
 
         for (name, entry) in shard {
@@ -46,6 +46,6 @@ impl AuthorStore {
             }
         }
 
-        store
+        Ok(store)
     }
 }

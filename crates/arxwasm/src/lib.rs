@@ -21,7 +21,12 @@ struct AppState {
 
 #[wasm_bindgen]
 pub fn init(shards_json: &str, rankings_json: &str) -> Result<(), JsValue> {
-    let store = AuthorStore::from_shards(shards_json, rankings_json);
+    let store = match AuthorStore::from_shards(shards_json, rankings_json) {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(JsValue::from_str(&format!("from_shards failed: {}", e)));
+        }
+    };
 
     let mut trie = AuthorTrie::new();
     let mut trigram = TrigramIndex::new();
