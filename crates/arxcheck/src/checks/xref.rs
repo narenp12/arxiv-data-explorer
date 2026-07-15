@@ -141,7 +141,9 @@ mod tests {
         let check = CrossRefCheck;
         let violations = check.run(dir.to_str().unwrap());
         assert_matches!(
-            violations.iter().find(|v| v.message.contains("not found in any shard")),
+            violations
+                .iter()
+                .find(|v| v.message.contains("not found in any shard")),
             Some(_)
         );
 
@@ -173,7 +175,9 @@ mod tests {
         let check = CrossRefCheck;
         let violations = check.run(dir.to_str().unwrap());
         assert_matches!(
-            violations.iter().find(|v| v.message.contains("relative") && v.message.contains("> 100")),
+            violations
+                .iter()
+                .find(|v| v.message.contains("relative") && v.message.contains("> 100")),
             Some(_)
         );
 

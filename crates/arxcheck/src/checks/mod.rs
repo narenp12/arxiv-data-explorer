@@ -1,7 +1,7 @@
 use crate::{Check, CheckViolation};
-use std::path::Path;
-use std::fs;
 use serde::de::DeserializeOwned;
+use std::fs;
+use std::path::Path;
 
 #[allow(dead_code)]
 pub(crate) fn read_json_file<T: DeserializeOwned>(

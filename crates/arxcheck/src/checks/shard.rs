@@ -1,6 +1,6 @@
+use super::read_json_file;
 use crate::{Check, CheckViolation};
 use serde::Deserialize;
-use super::read_json_file;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -41,7 +41,9 @@ impl Check for ShardCheck {
             if !fname.starts_with("shard-")
                 && let Some(ext) = path.extension().and_then(|s| s.to_str())
                 && ext != "json"
-            { continue; }
+            {
+                continue;
+            }
             let shard: std::collections::HashMap<String, ShardEntry> =
                 match read_json_file(&path, &mut violations) {
                     Some(m) => m,
@@ -125,7 +127,9 @@ mod tests {
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
         assert_matches!(
-            violations.iter().find(|v| v.message.contains("invalid JSON")),
+            violations
+                .iter()
+                .find(|v| v.message.contains("invalid JSON")),
             Some(_)
         );
 
@@ -184,7 +188,9 @@ mod tests {
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
         assert_matches!(
-            violations.iter().find(|v| v.message.contains("empty co-author")),
+            violations
+                .iter()
+                .find(|v| v.message.contains("empty co-author")),
             Some(_)
         );
 
@@ -202,7 +208,9 @@ mod tests {
         let check = ShardCheck;
         let violations = check.run(dir.to_str().unwrap());
         assert_matches!(
-            violations.iter().find(|v| v.message.contains("cannot read directory")),
+            violations
+                .iter()
+                .find(|v| v.message.contains("cannot read directory")),
             Some(_)
         );
 
