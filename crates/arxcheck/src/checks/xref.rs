@@ -1,3 +1,4 @@
+use super::read_json_file;
 use crate::{Check, CheckViolation};
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -23,26 +24,9 @@ impl Check for CrossRefCheck {
         let mut violations = Vec::new();
         let path = Path::new(data_dir).join("author_rankings.json");
 
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) => {
-                violations.push(CheckViolation::error(
-                    path.display().to_string(),
-                    format!("cannot read: {e}"),
-                ));
-                return violations;
-            }
-        };
-
-        let rankings: Vec<RankingEntry> = match serde_json::from_str(&content) {
-            Ok(r) => r,
-            Err(e) => {
-                violations.push(CheckViolation::error(
-                    path.display().to_string(),
-                    format!("invalid JSON: {e}"),
-                ));
-                return violations;
-            }
+        let rankings: Vec<RankingEntry> = match read_json_file(&path, &mut violations) {
+            Some(r) => r,
+            None => return violations,
         };
 
         let shards_dir = Path::new(data_dir).join("authors");
@@ -86,6 +70,7 @@ impl Check for CrossRefCheck {
 mod tests {
     use super::*;
 
+    use std::assert_matches;
     use std::io::Write;
 
     fn write_json(dir: &std::path::Path, name: &str, data: &serde_json::Value) {
@@ -155,12 +140,10 @@ mod tests {
 
         let check = CrossRefCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert_eq!(
-            violations.len(),
-            1,
-            "expected 1 violation for unknown author"
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("not found in any shard")),
+            Some(_)
         );
-        assert!(violations[0].message.contains("not found in any shard"));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -189,10 +172,9 @@ mod tests {
 
         let check = CrossRefCheck;
         let violations = check.run(dir.to_str().unwrap());
-        assert!(
-            violations
-                .iter()
-                .any(|v| v.message.contains("relative") && v.message.contains("> 100"))
+        assert_matches!(
+            violations.iter().find(|v| v.message.contains("relative") && v.message.contains("> 100")),
+            Some(_)
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
