@@ -2,6 +2,7 @@ import { getCached, setCached, detailCache } from './cache';
 import { rateLimitedFetch } from './rate-limit';
 import { authorList, getProp, API_BASE } from './helpers';
 import { ensureChecker } from './checker';
+import { warn } from '$lib/utils/logger';
 
 export const DETAIL_FIELDS = "title,abstract,year,citationCount,authors,externalIds,publicationDate,venue,openAccessPdf";
 
@@ -56,7 +57,7 @@ export async function getPaperDetail(id: string): Promise<PaperDetail | null> {
     const wasm = ensureChecker();
     if (wasm) {
       const errs = wasm.validate_paper_detail_json(JSON.stringify(detail));
-      if (errs.length) console.warn("[arxcheck] PaperDetail violations:", errs);
+      if (errs.length) warn("[arxcheck] PaperDetail violations:", errs);
     }
   }
 

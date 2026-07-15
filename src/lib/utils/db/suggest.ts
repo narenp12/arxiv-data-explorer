@@ -1,4 +1,5 @@
 import FlexSearch, { Document as FlexDocument } from "flexsearch";
+import { warn } from '$lib/utils/logger';
 
 const SHARD_BASE = "/data/search/suggest";
 const LRU_MAX = 3;
@@ -47,7 +48,7 @@ async function loadCategories(): Promise<void> {
       const buf = await res.arrayBuffer();
       const text = await gunzip(buf);
       categoriesData = JSON.parse(text);
-    } catch {}
+        } catch { /* sessionStorage quota exceeded */ }
   })();
   return categoriesPromise;
 }
@@ -117,7 +118,7 @@ export class SuggestShard {
           this.index.add(p);
         }
       } catch (e) {
-        console.warn("FlexSearch OOM, disabling suggestions", e);
+        warn("FlexSearch OOM, disabling suggestions", e);
         this.status = "disabled";
         this.index = null;
         return;
@@ -128,7 +129,7 @@ export class SuggestShard {
       this.status = "ready";
     } catch (e: any) {
       if (e?.name === "AbortError") return;
-      console.warn(`SuggestShard load error for ${letter}:`, e);
+      warn(`SuggestShard load error for ${letter}:`, e);
       this.status = "error";
     }
   }
@@ -217,9 +218,7 @@ export class SuggestShard {
         return true;
       }
       return false;
-    } catch {
-      return false;
-    }
+    } catch { return false; /* version check failed */ }
   }
 
   private cacheShard(letter: string, raw: string): void {
@@ -237,7 +236,7 @@ export class SuggestShard {
           sessionStorage.clear();
           this.lruKeys = [letter];
           sessionStorage.setItem(`suggest_shard_${letter}`, raw);
-        } catch {}
+    } catch { /* categories non-critical */ }
       }
     }
   }

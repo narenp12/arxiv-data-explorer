@@ -162,9 +162,7 @@
 				.on("zoom", (e) => root.attr("transform", e.transform));
 			d3.select(svgEl).call(zoom);
 
-		} catch {
-			loading = false;
-		}
+		} catch { /* citation data load non-critical */ }
 	});
 </script>
 

@@ -13,9 +13,7 @@
     try {
       await loadAuthorSearch();
       stats = getStats();
-    } catch {
-      error = getInitError();
-    } finally {
+    } catch { /* search load failure */ } finally {
       loading = false;
     }
   });

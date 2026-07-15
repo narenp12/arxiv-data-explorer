@@ -30,9 +30,7 @@
 		try {
 			const res = await fetch(`${base}/data/category_hierarchy.json`);
 			if (res.ok) data = await res.json();
-		} catch {
-			// leave null
-		} finally {
+		} catch { /* categories load non-critical */ } finally {
 			loading = false;
 		}
 	});

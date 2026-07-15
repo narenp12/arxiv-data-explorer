@@ -51,9 +51,7 @@
 				}
 			}
 			items = [...pages, ...cats, ...auths];
-		} catch {
-			items = pages;
-		}
+		} catch { /* command palette data load non-critical */ }
 	}
 
 	let filtered = $derived.by(() => {

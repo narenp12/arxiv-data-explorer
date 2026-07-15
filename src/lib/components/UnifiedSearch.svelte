@@ -4,6 +4,7 @@
 	import { searchPapers, type PaperResult } from "$lib/utils/db/search";
 	import { scoreCategory } from "$lib/utils/db";
 	import { loadAuthorSearch, searchAuthors, isReady } from "$lib/authors/wasm-search";
+	import { warn } from "$lib/utils/logger";
 
 	interface AuthorItem { name: string; papers: number; }
 	interface CatItem { id: string; label: string; papers: number; domain: string; }
@@ -54,7 +55,7 @@
 				categories = flat;
 				concepts = flat.filter((c) => c.id.includes(".")).map((c) => ({ id: c.id, label: c.label }));
 			}
-		} catch (err) { console.warn("Failed to load search data:", err); }
+		} catch (err) { warn("Failed to load search data:", err); }
 	}
 
 	async function onFocus() {
@@ -67,7 +68,7 @@
 				wasmLoaded = true;
 				if (query.trim().length >= 2) doSearch();
 			} catch (err) {
-				console.warn("WASM load failed, falling back to includes():", err);
+				warn("WASM load failed, falling back to includes():", err);
 			}
 			wasmLoading = false;
 		}
@@ -143,7 +144,7 @@
 			if (seq !== requestSeq) return;
 			paperResults = res.results;
 			paperTotal = res.total;
-		} 		catch (err) { console.warn("Paper search failed:", err); }
+		} 		catch (err) { warn("Paper search failed:", err); }
 
 		searching = false;
 	}

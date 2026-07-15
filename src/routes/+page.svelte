@@ -19,9 +19,7 @@
 			} else {
 				error = true;
 			}
-		} catch {
-			error = true;
-		}
+		} catch { /* data load non-critical */ }
 
 		try {
 			const [causalRes, dynRes] = await Promise.all([
@@ -41,9 +39,7 @@
 						points: sparklinePoints(dyn.series[c.id] ?? [], 120, 32),
 					}));
 			}
-		} catch {
-			// pulse strip simply doesn't render
-		}
+		} catch { /* pulse strip doesn't render */ }
 	});
 
 	function fmt(n: number): string {

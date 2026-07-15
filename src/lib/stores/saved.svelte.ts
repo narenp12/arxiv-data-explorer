@@ -22,9 +22,7 @@ function load(): SavedPaper[] {
 			(p): p is SavedPaper =>
 				p && typeof p.id === "string" && typeof p.title === "string" && typeof p.authors === "string",
 		);
-	} catch {
-		return [];
-	}
+	} catch { return []; /* readingList restore failed */ }
 }
 
 class ReadingList {

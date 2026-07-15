@@ -2,6 +2,7 @@ import { getCached, setCached, searchCache } from './cache';
 import { rateLimitedFetch } from './rate-limit';
 import { arxivId, getProp, API_BASE, ARXIV_API_BASE } from './helpers';
 import { ensureChecker } from './checker';
+import { warn } from '$lib/utils/logger';
 
 export const SEARCH_FIELDS = "title,year,citationCount,authors,externalIds";
 
@@ -124,7 +125,7 @@ export async function searchPapers(
     const wasm = ensureChecker();
     if (wasm) {
       const errs = wasm.validate_paper_result_json(JSON.stringify({results}));
-      if (errs.length) console.warn("[arxcheck] PaperResult violations:", errs);
+      if (errs.length) warn("[arxcheck] PaperResult violations:", errs);
     }
   }
 

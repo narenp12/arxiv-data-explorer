@@ -16,9 +16,7 @@
 		try {
 			const res = await fetch(`${base}/data/author_rankings.json`);
 			if (res.ok) authors = await res.json();
-		} catch {
-			// leave empty
-		} finally {
+		} catch { /* author list load non-critical */ } finally {
 			loading = false;
 		}
 	});
