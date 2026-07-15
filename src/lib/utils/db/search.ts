@@ -4,6 +4,8 @@ import { arxivId, getProp, API_BASE, ARXIV_API_BASE } from './helpers';
 import { ensureChecker } from './checker';
 import { warn } from '$lib/utils/logger';
 
+const PAGE_LIMIT = 30;
+
 export const SEARCH_FIELDS = "title,year,citationCount,authors,externalIds";
 
 export interface PaperResult {
@@ -105,7 +107,7 @@ export async function searchPapers(
 	const q = query.trim();
 	if (!q || q.length < 2) return { results: [], total: 0 };
 
-	const limit = options?.limit ?? 30;
+	const limit = options?.limit ?? PAGE_LIMIT;
 	const offset = options?.offset ?? 0;
 	const yearRange = options?.yearRange;
 
@@ -146,7 +148,7 @@ export async function searchArxiv(
 	const q = query.trim();
 	if (!q || q.length < 2) return { results: [], total: 0 };
 
-	const limit = opts?.limit ?? 30;
+	const limit = opts?.limit ?? PAGE_LIMIT;
 	const offset = opts?.offset ?? 0;
 	const sortBy = opts?.sortBy ?? "relevance";
 	const sortOrder = opts?.sortOrder ?? "descending";
@@ -181,7 +183,7 @@ export async function searchArxivCategory(
 	cat: string,
 	opts?: { offset?: number; limit?: number },
 ): Promise<{ results: PaperResult[]; total: number }> {
-	const limit = opts?.limit ?? 30;
+	const limit = opts?.limit ?? PAGE_LIMIT;
 	const offset = opts?.offset ?? 0;
 
 	const cacheKey = JSON.stringify({ kind: "arxiv", cat, limit, offset });

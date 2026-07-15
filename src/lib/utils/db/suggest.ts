@@ -1,6 +1,8 @@
 import FlexSearch, { Document as FlexDocument } from "flexsearch";
 import { warn } from '$lib/utils/logger';
 
+const PREFETCH_TIMEOUT_MS = 5000;
+
 const SHARD_BASE = "/data/search/suggest";
 const LRU_MAX = 3;
 
@@ -201,9 +203,9 @@ export class SuggestShard {
       }
     };
     if ("requestIdleCallback" in globalThis) {
-      (globalThis as any).requestIdleCallback(cb, { timeout: 5000 });
+      (globalThis as any).requestIdleCallback(cb, { timeout: PREFETCH_TIMEOUT_MS });
     } else {
-      setTimeout(cb, 5000);
+      setTimeout(cb, PREFETCH_TIMEOUT_MS);
     }
   }
 
