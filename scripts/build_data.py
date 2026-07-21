@@ -84,8 +84,8 @@ def load_shards(incremental: bool = True, sample: int = 0) -> daft.DataFrame:
         max_date = None
 
     print("Downloading shards from HuggingFace…")
-    cache_path = snapshot_download(REMOTE_REPO, repo_type="dataset")
-    shard_files = sorted(Path(cache_path).rglob("*.parquet"))
+    cache_path = Path(snapshot_download(REMOTE_REPO, repo_type="dataset"))
+    shard_files = sorted(cache_path.rglob("*.parquet"))
     print(f"Found {len(shard_files)} shard files")
 
     if sample:
@@ -94,23 +94,26 @@ def load_shards(incremental: bool = True, sample: int = 0) -> daft.DataFrame:
         shard_files = shard_files[:n_shards]
         print(f"Using {len(shard_files)} shards for sample of ~{sample:,}")
 
-    dfs = []
-    for i, f in enumerate(shard_files):
-        if i % 100 == 0:
-            print(f"  Reading shard {i}/{len(shard_files)}…")
-        df = daft.read_parquet(str(f))
+    if max_date is not None:
+        dfs = []
+        for i, f in enumerate(shard_files):
+            if i % 100 == 0:
+                print(f"  Reading shard {i}/{len(shard_files)}…")
+            df = daft.read_parquet(str(f))
+            if "update_date" in df.schema().column_names():
+                df = df.where(c("update_date") > max_date)
+            dfs.append(df)
 
-        if max_date is not None and "update_date" in df.schema().column_names():
-            df = df.where(c("update_date") > max_date)
+        if not dfs:
+            print("No new shards to process.")
+            return existing
 
-        dfs.append(df)
-
-    if not dfs:
-        print("No new shards to process.")
-        return existing
-
-    full = daft.concat(dfs)
-    print(f"Concatenated {len(dfs)} shards")
+        full = daft.concat(dfs)
+        print(f"Concatenated {len(dfs)} shards")
+    else:
+        paths = [str(f) for f in shard_files]
+        full = daft.read_parquet(paths)
+        print(f"Read {len(paths)} shards via bulk glob")
 
     if "vector" in full.schema().column_names():
         full = full.exclude("vector")
